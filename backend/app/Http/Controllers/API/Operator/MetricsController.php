@@ -22,7 +22,7 @@ class MetricsController extends BaseController
             'station_id' => ['nullable', 'integer', 'exists:stations,id'],
         ]);
         $user = $request->user();
-        $tz = 'Asia/Kathmandu';
+        $tz = config('ev.default_timezone');
         $days = (int) ($data['days'] ?? 30);
 
         $stations = Station::query()

@@ -2,6 +2,10 @@
 
 namespace App\Providers;
 
+use App\Contracts\PaymentGateway;
+use App\Services\Payments\EsewaGateway;
+use App\Services\Payments\KhaltiGateway;
+use App\Services\Payments\NullGateway;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -14,7 +18,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(PaymentGateway::class, fn () => match (config('payments.driver')) {
+            'khalti' => new KhaltiGateway,
+            'esewa' => new EsewaGateway,
+            default => new NullGateway,
+        });
     }
 
     /**

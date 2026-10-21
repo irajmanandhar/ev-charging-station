@@ -21,6 +21,8 @@ class BookingResource extends JsonResource
             'estimated_kwh' => $this->estimated_kwh,
             'estimated_cost' => $this->estimated_cost,
             'cancelled_at' => $this->cancelled_at?->toIso8601ZuluString(),
+            'cancellation_fee' => $this->cancellation_fee,
+            'paid' => $this->whenLoaded('payments', fn () => $this->payments->contains('status', 'completed')),
             'created_at' => $this->created_at?->toIso8601ZuluString(),
             'user' => $this->whenLoaded('user', fn () => [
                 'id' => $this->user->id,

@@ -27,6 +27,11 @@ Artisan::command('auth:prune', function () {
     $this->info("Pruned {$otps} OTPs and {$pending} stale sign-ups.");
 })->purpose('Delete expired OTP codes and abandoned sign-ups');
 
+Artisan::command('bookings:remind', function (BookingService $bookings) {
+    $this->info('Reminders sent: '.$bookings->sendReminders());
+})->purpose('Email drivers whose booking starts soon');
+
 Schedule::command('bookings:sweep')->everyMinute()->withoutOverlapping();
+Schedule::command('bookings:remind')->everyMinute()->withoutOverlapping();
 Schedule::command('auth:prune')->daily();
 Schedule::command('sanctum:prune-expired --hours=24')->daily();

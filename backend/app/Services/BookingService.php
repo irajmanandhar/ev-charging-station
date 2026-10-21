@@ -11,13 +11,19 @@ use App\Models\Booking;
 use App\Models\Charger;
 use App\Models\ChargingSession;
 use App\Models\User;
+use App\Notifications\BookingCancelled;
+use App\Notifications\BookingConfirmed;
+use App\Notifications\BookingNoShow;
+use App\Notifications\BookingReminder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class BookingService
 {
-    public function __construct(private readonly PricingService $pricing)
-    {
+    public function __construct(
+        private readonly PricingService $pricing,
+        private readonly PaymentService $payments,
+    ) {
     }
 
     /**
@@ -74,7 +80,7 @@ class BookingService
 
             $quote = $this->pricing->quote($locked, $start->diffInMinutes($end));
 
-            return Booking::create([
+            $booking = Booking::create([
                 'user_id' => $user->id,
                 'charger_id' => $locked->id,
                 'starts_at' => $start,
@@ -84,6 +90,10 @@ class BookingService
                 'estimated_kwh' => $quote['kwh'],
                 'estimated_cost' => $quote['cost'],
             ]);
+
+            $user->notify(new BookingConfirmed($booking));
+
+            return $booking;
         });
     }
 
@@ -101,10 +111,18 @@ class BookingService
                 throw new DomainRuleException('This booking has already started. Check in or let it lapse.', 'already_started');
             }
 
+            // Late cancellations keep a fee; earlier ones are free.
+            $late = now()->gt($booking->starts_at->copy()->subMinutes(config('ev.cancellation_free_minutes')));
+            $fee = $late ? round($booking->estimated_cost * config('ev.cancellation_fee_percent') / 100, 2) : 0;
+
             $booking->update([
                 'status' => BookingStatus::Cancelled,
                 'cancelled_at' => now(),
+                'cancellation_fee' => $fee,
             ]);
+
+            $this->payments->refundFor($booking);
+            $booking->user->notify(new BookingCancelled($booking));
 
             return $booking;
         });
@@ -235,10 +253,19 @@ class BookingService
      */
     public function sweep(): array
     {
-        $noShows = Booking::query()
+        $missed = Booking::query()
+            ->with('user')
             ->where('status', BookingStatus::Confirmed->value)
             ->where('starts_at', '<', now()->subMinutes(config('ev.no_show_grace_minutes')))
+            ->get();
+
+        // Re-check status in the UPDATE so a booking checked in meanwhile is not clobbered.
+        $noShows = Booking::query()
+            ->whereIn('id', $missed->modelKeys())
+            ->where('status', BookingStatus::Confirmed->value)
             ->update(['status' => BookingStatus::NoShow->value, 'updated_at' => now()]);
+
+        $missed->each(fn (Booking $b) => $b->user->notify(new BookingNoShow($b)));
 
         $stopped = 0;
         ChargingSession::query()
@@ -254,6 +281,29 @@ class BookingService
             });
 
         return ['no_shows' => $noShows, 'auto_stopped' => $stopped];
+    }
+
+    /** Email a reminder for confirmed bookings starting soon. Safe to run every minute. */
+    public function sendReminders(): int
+    {
+        $sent = 0;
+
+        Booking::query()
+            ->with('user')
+            ->where('status', BookingStatus::Confirmed->value)
+            ->whereNull('reminder_sent_at')
+            ->where('starts_at', '>', now())
+            ->where('starts_at', '<=', now()->addMinutes(config('ev.reminder_minutes_before')))
+            ->each(function (Booking $booking) use (&$sent) {
+                // Claim the booking first so overlapping runs can not send it twice.
+                $claimed = Booking::query()->whereKey($booking->id)->whereNull('reminder_sent_at')->update(['reminder_sent_at' => now()]);
+                if ($claimed) {
+                    $booking->user->notify(new BookingReminder($booking));
+                    $sent++;
+                }
+            });
+
+        return $sent;
     }
 
     private function sweepCharger(Charger $charger): void

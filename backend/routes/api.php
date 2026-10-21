@@ -9,6 +9,7 @@ use App\Http\Controllers\API\Auth\SocialAuthController;
 use App\Http\Controllers\API\BookingController;
 use App\Http\Controllers\API\ChargerController;
 use App\Http\Controllers\API\Operator;
+use App\Http\Controllers\API\PaymentController;
 use App\Http\Controllers\API\SessionController;
 use App\Http\Controllers\API\StationController;
 use Illuminate\Support\Facades\Route;
@@ -63,6 +64,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/chargers/{charger}/start', [ChargerController::class, 'startNow'])->middleware('throttle:booking');
 
+    Route::post('/bookings/{booking}/pay', [PaymentController::class, 'start'])->middleware('throttle:booking');
+    Route::post('/payments/{payment}/confirm', [PaymentController::class, 'confirm'])->middleware('throttle:booking');
+
     Route::get('/sessions', [SessionController::class, 'index']);
     Route::post('/sessions/{session}/stop', [SessionController::class, 'stop']);
 
@@ -72,6 +76,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:operator,admin')->prefix('operator')->group(function () {
         Route::get('/metrics', [Operator\MetricsController::class, 'index']);
         Route::get('/bookings', [Operator\BookingController::class, 'index']);
+        Route::get('/export/bookings', [Operator\ExportController::class, 'bookings'])->middleware('throttle:10,1');
 
         Route::get('/stations', [Operator\StationController::class, 'index']);
         Route::post('/stations', [Operator\StationController::class, 'store']);
