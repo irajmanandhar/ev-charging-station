@@ -203,9 +203,20 @@ class DatabaseSeeder extends Seeder
 
         $open = $chargers->filter(fn (Charger $c) => $c->station->isOpenBetween($now, $now->copy()->addHours(2)))->values();
 
+        // Each live or upcoming booking goes to a different driver, so no driver gets overlapping
+        // bookings (which the API itself would refuse). Index 0 is the demo driver, handled below.
+        $pool = $drivers->slice(1)->shuffle()->values();
+        $nextDriver = function () use (&$pool, $drivers) {
+            if ($pool->isEmpty()) {
+                $pool = $drivers->slice(1)->shuffle()->values();
+            }
+
+            return $pool->shift();
+        };
+
         // Charging right now on every third open charger.
         foreach ($open->filter(fn ($c, $i) => $i % 3 === 0) as $charger) {
-            $user = $drivers[mt_rand(1, $drivers->count() - 1)];
+            $user = $nextDriver();
             $start = $now->copy()->subMinutes(mt_rand(5, 40));
             $booking = $charger->bookings()->create([
                 'user_id' => $user->id,
@@ -227,7 +238,7 @@ class DatabaseSeeder extends Seeder
         foreach ($open->filter(fn ($c, $i) => $i % 3 === 1 && $i % 2 === 0) as $charger) {
             $start = $slot($now);
             $charger->bookings()->create([
-                'user_id' => $drivers[mt_rand(1, $drivers->count() - 1)]->id,
+                'user_id' => $nextDriver()->id,
                 'starts_at' => $start,
                 'ends_at' => $start->copy()->addMinutes(60),
                 'status' => BookingStatus::Confirmed,
@@ -245,12 +256,13 @@ class DatabaseSeeder extends Seeder
             );
             $start = $day->setTime($hour, [0, 15, 30, 45][mt_rand(0, 3)])->utc();
             $minutes = [30, 60, 90][mt_rand(0, 2)];
-            if (Booking::query()->overlapping($charger->id, $start, $start->copy()->addMinutes($minutes))->exists()) {
-                continue;
+            if (Booking::query()->overlapping($charger->id, $start, $start->copy()->addMinutes($minutes))->exists()
+                || ! $charger->station->isOpenBetween($start, $start->copy()->addMinutes($minutes))) {
+                continue; // the API would refuse it too
             }
 
             $charger->bookings()->create([
-                'user_id' => $drivers[mt_rand(1, $drivers->count() - 1)]->id,
+                'user_id' => $nextDriver()->id,
                 'starts_at' => $start,
                 'ends_at' => $start->copy()->addMinutes($minutes),
                 'status' => BookingStatus::Confirmed,

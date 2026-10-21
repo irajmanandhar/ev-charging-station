@@ -23,12 +23,13 @@ const base =
 export function Button({
   variant = "primary",
   loading,
+  disabled,
   className,
   children,
   ...props
 }: ComponentProps<"button"> & { variant?: Variant; loading?: boolean }) {
   return (
-    <button className={cx(base, variants[variant], className)} disabled={loading || props.disabled} {...props}>
+    <button {...props} className={cx(base, variants[variant], className)} disabled={loading || disabled} aria-busy={loading || undefined}>
       {loading && <Spinner />}
       {children}
     </button>

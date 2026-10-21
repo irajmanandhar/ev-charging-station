@@ -727,6 +727,10 @@ components:
                   currency: { type: string }
                   cancellation_free_minutes: { type: integer }
                   cancellation_fee_percent: { type: number }
+                  checkin_early_minutes: { type: integer }
+                  no_show_grace_minutes: { type: integer }
+                  charge_efficiency: { type: number }
+                  max_session_kwh: { type: number }
     AuthToken:
       description: Signed in
       content:

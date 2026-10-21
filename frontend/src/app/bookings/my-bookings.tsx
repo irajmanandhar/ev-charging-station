@@ -11,9 +11,10 @@ import { date, duration, kwh, money, time } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import type { AppConfig, Booking, Session } from "@/lib/types";
 
-const CHECKIN_EARLY_MIN = 10;
-const GRACE_MIN = 15;
-const EFFICIENCY = 0.85;
+// Fallbacks until /config has loaded; the API is the source of truth (config/ev.php).
+const DEFAULTS = { checkin_early_minutes: 10, no_show_grace_minutes: 15, charge_efficiency: 0.85, max_session_kwh: 80, cancellation_free_minutes: 60, cancellation_fee_percent: 20 };
+type Rules = typeof DEFAULTS;
+const rulesFrom = (c?: AppConfig): Rules => ({ ...DEFAULTS, ...(c ?? {}) });
 
 const PENDING_PAYMENT = "ev.pending-payment";
 
@@ -125,7 +126,7 @@ export function MyBookings() {
               <h2 className="mb-3 text-lg font-semibold">{t("bookings.chargingNow")}</h2>
               <div className="space-y-3">
                 {active.map((b) => (
-                  <ActiveSession key={b.id} booking={b} onChange={refresh} />
+                  <ActiveSession key={b.id} booking={b} onChange={refresh} rules={rulesFrom(config)} />
                 ))}
               </div>
             </section>
@@ -140,7 +141,7 @@ export function MyBookings() {
             ) : (
               <div className="space-y-3">
                 {upcoming.map((b) => (
-                  <UpcomingBooking key={b.id} booking={b} onChange={refresh} payments={!!config?.payments_enabled} />
+                  <UpcomingBooking key={b.id} booking={b} onChange={refresh} payments={!!config?.payments_enabled} rules={rulesFrom(config)} />
                 ))}
               </div>
             )}
@@ -166,12 +167,11 @@ export function MyBookings() {
                     {past.map((b) => (
                       <tr key={b.id}>
                         <td className="px-4 py-3 whitespace-nowrap">
-                          {date(b.starts_at)} <span className="text-ink-2">{time(b.starts_at)}</span>
+                          {date(b.starts_at, b.charger?.station?.timezone)}{" "}
+                          <span className="text-ink-2">{time(b.starts_at, b.charger?.station?.timezone)}</span>
                         </td>
                         <td className="px-4 py-3">
-                          <Link href={`/stations/${b.charger?.station?.id}`} className="hover:underline">
-                            {b.charger?.station?.name}
-                          </Link>
+                          <StationLink booking={b} />
                           <span className="text-ink-2"> · {b.charger?.label}</span>
                         </td>
                         <td className="px-4 py-3">
@@ -192,14 +192,23 @@ export function MyBookings() {
   );
 }
 
+/** Link to the booking's station, or plain text if the station is gone. */
+function StationLink({ booking: b, className }: { booking: Booking; className?: string }) {
+  const station = b.charger?.station;
+  if (!station) return <span className={className}>Station removed</span>;
+  return (
+    <Link href={`/stations/${station.id}`} className={`hover:underline ${className ?? ""}`}>
+      {station.name}
+    </Link>
+  );
+}
+
 function BookingSummary({ booking: b }: { booking: Booking }) {
   const tz = b.charger?.station?.timezone;
   return (
     <div className="min-w-0">
       <div className="flex flex-wrap items-center gap-2">
-        <Link href={`/stations/${b.charger?.station?.id}`} className="font-semibold hover:underline">
-          {b.charger?.station?.name}
-        </Link>
+        <StationLink booking={b} className="font-semibold" />
         <BookingStatusBadge status={b.status} />
       </div>
       <p className="mt-1 text-sm text-ink-2">
@@ -214,7 +223,7 @@ function BookingSummary({ booking: b }: { booking: Booking }) {
   );
 }
 
-function UpcomingBooking({ booking: b, onChange, payments }: { booking: Booking; onChange: () => void; payments: boolean }) {
+function UpcomingBooking({ booking: b, onChange, payments, rules }: { booking: Booking; onChange: () => void; payments: boolean; rules: Rules }) {
   const t = useT();
   const now = useNow(15_000);
   const toast = useToast();
@@ -222,14 +231,21 @@ function UpcomingBooking({ booking: b, onChange, payments }: { booking: Booking;
   const [error, setError] = useState<string | null>(null);
 
   const start = new Date(b.starts_at).getTime();
-  const opens = start - CHECKIN_EARLY_MIN * 60_000;
-  const closes = start + GRACE_MIN * 60_000;
+  const opens = start - rules.checkin_early_minutes * 60_000;
+  const closes = start + rules.no_show_grace_minutes * 60_000;
   const canCheckIn = now >= opens && now <= closes;
   const canCancel = now < start;
-  const minsToStart = Math.round((start - now) / 60_000);
+  const minsToStart = Math.ceil((start - now) / 60_000);
 
   const act = async (kind: "checkin" | "cancel") => {
-    if (kind === "cancel" && !window.confirm("Cancel this booking? The slot will be released to other drivers.")) return;
+    if (kind === "cancel") {
+      const late = start - Date.now() < rules.cancellation_free_minutes * 60_000;
+      const fee = Math.round((b.estimated_cost * rules.cancellation_fee_percent) / 100);
+      const message = late
+        ? `This booking starts in less than ${rules.cancellation_free_minutes} minutes, so cancelling keeps a fee of about ${money(fee)} (${rules.cancellation_fee_percent}% of the estimate). Cancel anyway?`
+        : "Cancel this booking? The slot will be released to other drivers. No fee applies.";
+      if (!window.confirm(message)) return;
+    }
     setBusy(kind);
     setError(null);
     try {
@@ -288,7 +304,7 @@ function UpcomingBooking({ booking: b, onChange, payments }: { booking: Booking;
           {canCheckIn
             ? "You can check in now."
             : now < opens
-              ? `Check-in opens ${CHECKIN_EARLY_MIN} min before your slot${minsToStart < 24 * 60 ? ` (in ${duration(minsToStart - CHECKIN_EARLY_MIN)})` : ""}.`
+              ? `Check-in opens ${rules.checkin_early_minutes} min before your slot${minsToStart < 24 * 60 ? ` (in ${duration(Math.max(1, minsToStart - rules.checkin_early_minutes))})` : ""}.`
               : "The check-in window has passed."}
         </span>
       </div>
@@ -301,7 +317,7 @@ function UpcomingBooking({ booking: b, onChange, payments }: { booking: Booking;
   );
 }
 
-function ActiveSession({ booking: b, onChange }: { booking: Booking; onChange: () => void }) {
+function ActiveSession({ booking: b, onChange, rules }: { booking: Booking; onChange: () => void; rules: Rules }) {
   const t = useT();
   const now = useNow(1000);
   const toast = useToast();
@@ -313,8 +329,8 @@ function ActiveSession({ booking: b, onChange }: { booking: Booking; onChange: (
   const started = new Date(session.started_at).getTime();
   const ends = new Date(b.ends_at).getTime();
   const elapsedMin = Math.max(0, (Math.min(now, ends) - started) / 60_000);
-  const progress = Math.min(1, (now - started) / (ends - started));
-  const energy = b.charger.power_kw * (elapsedMin / 60) * EFFICIENCY;
+  const progress = ends > started ? Math.min(1, Math.max(0, (now - started) / (ends - started))) : 1;
+  const energy = Math.min(b.charger.power_kw * (elapsedMin / 60) * rules.charge_efficiency, rules.max_session_kwh);
   const remaining = Math.max(0, Math.round((ends - now) / 60_000));
 
   const stop = async () => {

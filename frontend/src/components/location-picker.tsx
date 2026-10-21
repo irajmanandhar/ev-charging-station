@@ -3,6 +3,7 @@
 import "leaflet/dist/leaflet.css";
 import { CircleMarker, MapContainer, TileLayer, useMapEvents } from "react-leaflet";
 import { TILE_ATTRIBUTION, TILE_URL } from "@/lib/map-config";
+import { useVisibleMount } from "@/lib/use-visible-mount";
 
 function ClickHandler({ onPick }: { onPick: (lat: number, lng: number) => void }) {
   useMapEvents({ click: (e) => onPick(e.latlng.lat, e.latlng.lng) });
@@ -19,6 +20,8 @@ export default function LocationPicker({
   onPick: (lat: number, lng: number) => void;
 }) {
   const center: [number, number] = lat != null && lng != null ? [lat, lng] : [27.7072, 85.324];
+  const visible = useVisibleMount();
+  if (!visible) return null;
   return (
     <MapContainer center={center} zoom={lat != null ? 15 : 12} style={{ height: "100%", width: "100%" }}>
       <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />

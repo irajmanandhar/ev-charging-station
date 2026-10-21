@@ -35,7 +35,7 @@ test("a driver books a slot for tomorrow and then cancels it", async ({ page, re
   await first.click();
   await expect(page).toHaveURL(/\/stations\/\d+/);
 
-  await page.getByRole("option").filter({ hasNotText: "Offline" }).first().click();
+  await page.getByRole("list", { name: "Choose a charger" }).getByRole("button").filter({ hasNotText: "Offline" }).first().click();
   await page.getByRole("button", { name: /^Tomorrow/ }).click();
 
   const slot = page.locator("button[aria-pressed]").filter({ hasText: /^\d\d:\d\d$/ }).and(page.locator(":enabled")).first();
@@ -118,4 +118,36 @@ test("on desktop only the station list scrolls; the page and the map stay put", 
   await page.mouse.wheel(0, 1500);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   expect((await map.boundingBox())!.y).toBe(mapTop);
+});
+
+test("returning to a page with a map through client-side navigation does not crash", async ({ page, request }) => {
+  // Next keeps visited routes alive but hidden; the map used to be rebuilt on a destroyed Leaflet instance.
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const { email, password } = await createDriver(request);
+  await signIn(page, email, password); // lands on "/" with the map
+
+  await page.getByRole("link", { name: "My bookings" }).first().click();
+  await expect(page.getByRole("heading", { name: "My bookings" })).toBeVisible();
+  await page.getByRole("link", { name: "Book a charger" }).click();
+
+  await expect(page.getByRole("heading", { name: "Find a charger" })).toBeVisible();
+  await expect(page.locator(".leaflet-container")).toBeVisible();
+  await expect(page.getByText("Something went wrong")).toHaveCount(0);
+
+  // and again via a station page and back
+  await page.locator("a[href^='/stations/']").first().click();
+  await expect(page).toHaveURL(/\/stations\/\d+/);
+  await page.goBack();
+  await expect(page.locator(".leaflet-container")).toBeVisible();
+  await expect(page.getByText("Something went wrong")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("buttons and other clickable controls show a pointer cursor", async ({ page }) => {
+  await page.goto("/login");
+  const cursor = (locator: ReturnType<typeof page.getByRole>) => locator.evaluate((el) => getComputedStyle(el).cursor);
+  expect(await cursor(page.getByRole("button", { name: "Sign in", exact: true }))).toBe("pointer");
+  expect(await cursor(page.getByRole("button", { name: "EN" }))).toBe("pointer");
+  expect(await cursor(page.getByRole("link", { name: "Create an account" }))).toBe("pointer");
 });

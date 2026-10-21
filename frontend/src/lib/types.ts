@@ -80,6 +80,10 @@ export interface AppConfig {
   currency: string;
   cancellation_free_minutes: number;
   cancellation_fee_percent: number;
+  checkin_early_minutes: number;
+  no_show_grace_minutes: number;
+  charge_efficiency: number;
+  max_session_kwh: number;
 }
 
 export interface Booking {

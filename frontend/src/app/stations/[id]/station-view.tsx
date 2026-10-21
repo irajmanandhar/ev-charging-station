@@ -90,7 +90,7 @@ export function StationView({ params }: { params: Promise<{ id: string }> }) {
             {chargers.length === 0 ? (
               <p className="px-4 py-6 text-sm text-ink-2">This station has no chargers listed yet.</p>
             ) : (
-              <ul className="divide-y divide-line" role="listbox" aria-label="Choose a charger">
+              <ul className="divide-y divide-line" aria-label="Choose a charger">
                 {chargers.map((c) => (
                   <ChargerRow
                     key={c.id}
@@ -157,8 +157,8 @@ function ChargerRow({
   return (
     <li>
       <button
-        role="option"
-        aria-selected={selected}
+        type="button"
+        aria-pressed={selected}
         disabled={!bookable}
         onClick={onSelect}
         className={cx(
@@ -175,7 +175,7 @@ function ChargerRow({
             {CONNECTOR_LABEL[c.connector_type] ?? c.connector_type} · {c.power_kw} kW
           </span>
           <span className="block text-sm text-ink-2">
-            {money(c.price_per_kwh)}/kWh
+            {money(c.price_per_kwh, 2)}/kWh
             {c.busy_until && (live === "occupied" || live === "reserved") && <> · busy until {time(c.busy_until, tz)}</>}
           </span>
         </span>

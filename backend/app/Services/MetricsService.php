@@ -44,7 +44,8 @@ class MetricsService
             ->get(['id', 'charger_id', 'started_at', 'ended_at', 'energy_kwh', 'cost']);
 
         $chargedMinutes = $sessions->sum(fn ($s) => $s->started_at->diffInSeconds($s->ended_at) / 60);
-        $availableMinutes = $this->availableMinutes($stations, $from, $to);
+        $elapsedTo = $to->copy()->min(now());
+        $availableMinutes = $this->availableMinutes($stations, $from, $elapsedTo);
 
         $bookingCounts = Booking::query()
             ->whereIn('charger_id', $chargerIds)
@@ -139,7 +140,7 @@ class MetricsService
         return $stations->map(function (Station $station) use ($grouped, $from, $to) {
             $g = $grouped->get($station->id, collect());
             $minutes = $g->sum(fn ($s) => $s->started_at->diffInSeconds($s->ended_at) / 60);
-            $available = $this->availableMinutes(collect([$station]), $from, $to);
+            $available = $this->availableMinutes(collect([$station]), $from, $to->copy()->min(now()));
 
             return [
                 'station_id' => $station->id,
@@ -155,7 +156,7 @@ class MetricsService
     /** Charger-minutes the stations were open over the range. */
     private function availableMinutes(Collection $stations, Carbon $from, Carbon $to): float
     {
-        $days = max(1, $from->diffInMinutes($to) / 1440);
+        $days = max(0, $from->diffInMinutes($to) / 1440);
         $total = 0.0;
 
         foreach ($stations as $station) {

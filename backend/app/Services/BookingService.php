@@ -148,6 +148,10 @@ class BookingService
                 );
             }
 
+            if ($now->lt($booking->starts_at) && ! $charger->station->isOpenBetween($now->copy()->startOfMinute(), $booking->ends_at)) {
+                throw new DomainRuleException('The station is not open yet. Check in once it opens.', 'too_early');
+            }
+
             $closesAt = $booking->starts_at->copy()->addMinutes(config('ev.no_show_grace_minutes'));
             if ($now->gt($closesAt) || $now->gte($booking->ends_at)) {
                 throw new DomainRuleException('The check-in window for this booking has passed.', 'too_late');
@@ -265,12 +269,21 @@ class BookingService
                     ->update(['status' => BookingStatus::NoShow->value, 'updated_at' => now()]);
 
                 // Only bookings that really became no-shows get the email and the payment flag.
-                Booking::query()->with('user')->whereIn('id', $batch->modelKeys())
+                Booking::query()->with(['user', 'charger.station'])->whereIn('id', $batch->modelKeys())
                     ->where('status', BookingStatus::NoShow->value)
                     ->get()
                     ->each(function (Booking $b) use (&$noShows) {
-                        $noShows++;
                         try {
+                            // The driver couldn't check in because the operator took the charger or station
+                            // out of service: that is a cancellation on our side, free and refundable.
+                            if (! $this->isInService($b->charger)) {
+                                $b->update(['status' => BookingStatus::Cancelled, 'cancelled_at' => now(), 'cancellation_fee' => 0]);
+                                $this->payments->refundFor($b);
+                                $b->user->notify(new BookingCancelled($b));
+
+                                return;
+                            }
+                            $noShows++;
                             $this->payments->flagNoShow($b);
                             $b->user->notify(new BookingNoShow($b));
                         } catch (\Throwable $e) {
@@ -283,6 +296,7 @@ class BookingService
         ChargingSession::query()
             ->where('status', SessionStatus::Active->value)
             ->whereHas('booking', fn ($q) => $q->where('ends_at', '<=', now()))
+            ->lazyById()
             ->each(function (ChargingSession $session) use (&$stopped) {
                 try {
                     $this->stop($session);
@@ -306,6 +320,7 @@ class BookingService
             ->whereNull('reminder_sent_at')
             ->where('starts_at', '>', now())
             ->where('starts_at', '<=', now()->addMinutes(config('ev.reminder_minutes_before')))
+            ->lazyById()
             ->each(function (Booking $booking) use (&$sent) {
                 // Claim the booking first so overlapping runs can not send it twice.
                 $claimed = Booking::query()->whereKey($booking->id)->whereNull('reminder_sent_at')->update(['reminder_sent_at' => now()]);
@@ -316,6 +331,11 @@ class BookingService
             });
 
         return $sent;
+    }
+
+    private function isInService(Charger $charger): bool
+    {
+        return $charger->status === ChargerStatus::Available && $charger->station->status === StationStatus::Active;
     }
 
     private function sweepCharger(Charger $charger): void

@@ -32,8 +32,10 @@ export function OperatorOverview() {
       const a = document.createElement("a");
       a.href = url;
       a.download = `bookings-${from}-to-${to}.csv`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
       toast(e instanceof ApiError ? e.message : "Couldn't export.", "error");
     } finally {

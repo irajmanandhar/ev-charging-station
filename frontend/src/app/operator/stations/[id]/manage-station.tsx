@@ -206,7 +206,7 @@ function ChargerItem({ charger: c, onChange }: { charger: Charger; onChange: () 
         <p className="font-medium">
           {CONNECTOR_LABEL[c.connector_type]} · {c.power_kw} kW
         </p>
-        <p className="text-sm text-ink-2">{money(c.price_per_kwh)}/kWh</p>
+        <p className="text-sm text-ink-2">{money(c.price_per_kwh, 2)}/kWh</p>
       </div>
       {c.live_status && <StatusBadge status={c.live_status} />}
       <div className="flex w-full flex-wrap items-center gap-2 md:w-auto">

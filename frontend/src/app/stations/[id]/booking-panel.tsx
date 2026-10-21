@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import useSWR from "swr";
+import useSWR, { useSWRConfig } from "swr";
 import { useToast } from "@/components/toast";
 import { Alert, Button, Card, Field, Input, Skeleton, cx } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
@@ -30,7 +30,8 @@ export function BookingPanel({
   const [vehicle, setVehicle] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const { mutate } = useSWRConfig();
   const router = useRouter();
   const toast = useToast();
 
@@ -51,8 +52,9 @@ export function BookingPanel({
 
   const freeNow = avail?.free_minutes_now ?? 0;
   const canStartNow = charger.live_status === "available" && freeNow >= (avail?.min_minutes ?? 30) && day === today;
-  const limit = mode === "now" ? Math.floor(freeNow / 15) * 15 : maxFromStart;
-  const options = DURATIONS.filter((d) => d <= limit);
+  const slotMin = avail?.slot_minutes ?? 15;
+  const limit = mode === "now" ? Math.floor(freeNow / slotMin) * slotMin : maxFromStart;
+  const options = DURATIONS.filter((d) => d <= limit && d >= (avail?.min_minutes ?? 0) && d % slotMin === 0);
   const chosen = options.includes(minutes) ? minutes : options[options.length - 1] ?? 0;
 
   const { data: quote } = useSWR<{ kwh: number; cost: number }>(
@@ -61,6 +63,7 @@ export function BookingPanel({
 
   const requireUser = () => {
     if (user) return true;
+    if (authLoading) return false;
     router.push(`/login?next=${encodeURIComponent(`/stations/${station.id}`)}`);
     return false;
   };
@@ -84,6 +87,7 @@ export function BookingPanel({
         toast(`Booked ${charger.label} for ${dateLabel(start!, tz)}`);
       }
       onBooked();
+      await Promise.all([mutate("/bookings"), mutate("/sessions")]);
       router.push("/bookings");
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : "Something went wrong. Please try again.";
@@ -104,7 +108,7 @@ export function BookingPanel({
       <div className="border-b border-line p-4">
         <p className="text-sm text-ink-2">Charger {charger.label}</p>
         <h2 className="font-semibold">
-          {charger.connector_type} · {charger.power_kw} kW · {money(charger.price_per_kwh)}/kWh
+          {charger.connector_type} · {charger.power_kw} kW · {money(charger.price_per_kwh, 2)}/kWh
         </h2>
         <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-surface-2 p-1" role="tablist">
           <TabButton active={mode === "slot"} onClick={() => setMode("slot")}>
@@ -161,6 +165,8 @@ export function BookingPanel({
           </Alert>
         )}
 
+        {error && <Alert>{error}</Alert>}
+
         {(mode === "now" ? canStartNow : !!start) && (
           <>
             <div>
@@ -210,10 +216,8 @@ export function BookingPanel({
               </div>
             )}
 
-            {error && <Alert>{error}</Alert>}
-
-            <Button className="w-full" onClick={submit} loading={submitting} disabled={!chosen}>
-              {!user ? "Sign in to book" : mode === "now" ? "Start charging" : "Confirm booking"}
+            <Button className="w-full" onClick={submit} loading={submitting} disabled={!chosen || authLoading}>
+              {authLoading ? "Loading…" : !user ? "Sign in to book" : mode === "now" ? "Start charging" : "Confirm booking"}
             </Button>
           </>
         )}
@@ -254,7 +258,7 @@ function SlotGrid({
   onSelect: (s: string) => void;
 }) {
   // A start is offered only if at least the minimum duration is free from it.
-  const need = avail.min_minutes / avail.slot_minutes;
+  const need = Math.ceil(avail.min_minutes / avail.slot_minutes);
   const startable = avail.slots.map((_, i) => avail.slots.slice(i, i + need).length === need && avail.slots.slice(i, i + need).every((s) => s.free));
   const upcoming = avail.slots.filter((s) => !s.past);
 

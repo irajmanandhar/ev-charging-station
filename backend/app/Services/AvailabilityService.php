@@ -39,7 +39,7 @@ class AvailabilityService
         $bookable = $this->bookable($charger);
         $now = now();
         $slots = [];
-        for ($cursor = $open->copy(); $cursor->lt($close); $cursor->addMinutes($slot)) {
+        for ($cursor = $open->copy(); $cursor->copy()->addMinutes($slot)->lte($close); $cursor->addMinutes($slot)) {
             $slotStart = $cursor->copy()->utc();
             $slotEnd = $slotStart->copy()->addMinutes($slot);
 
@@ -100,14 +100,23 @@ class AvailabilityService
             ->first(['starts_at']);
 
         if (! $next) {
-            return $max;
+            return $this->bookableMinutes($max);
         }
 
         if ($next->starts_at->lte($now)) {
             return 0;
         }
 
-        return (int) min($max, floor($now->diffInMinutes($next->starts_at)));
+        return $this->bookableMinutes((int) min($max, floor($now->diffInMinutes($next->starts_at))));
+    }
+
+    /** Round down to whole slots; anything under the minimum booking can't be started. */
+    private function bookableMinutes(int $minutes): int
+    {
+        $slot = (int) config('ev.slot_minutes');
+        $minutes = intdiv(max(0, $minutes), $slot) * $slot;
+
+        return $minutes >= (int) config('ev.min_booking_minutes') ? $minutes : 0;
     }
 
     private function bookable(Charger $charger): bool

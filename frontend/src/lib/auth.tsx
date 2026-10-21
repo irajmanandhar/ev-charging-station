@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { api, getToken, setToken } from "./api";
+import { useSWRConfig } from "swr";
+import { ApiError, api, getToken, setToken } from "./api";
 import type { User } from "./types";
 
 type AuthState = {
@@ -18,6 +19,9 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const { mutate } = useSWRConfig();
+  // Cached API data (bookings, admin lists, ...) belongs to whoever was signed in; drop it on any change.
+  const clearCache = useCallback(() => mutate(() => true, undefined, { revalidate: false }), [mutate]);
 
   const refresh = useCallback(async () => {
     if (!getToken()) {
@@ -25,13 +29,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       return;
     }
-    try {
-      const { data } = await api<User>("/me");
-      setUser(data);
-    } catch {
-      setUser(null);
-    } finally {
-      setLoading(false);
+    for (;;) {
+      try {
+        const { data } = await api<User>("/me");
+        setUser(data);
+        setLoading(false);
+        return;
+      } catch (e) {
+        if (e instanceof ApiError && e.status !== 0) {
+          // 401: the API already dropped the token. Other API errors: treat as signed out.
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+        // API unreachable: keep the session and try again instead of bouncing to /login.
+        await new Promise((r) => setTimeout(r, 3000));
+      }
     }
   }, []);
 
@@ -39,15 +52,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Initial session check against the API; state updates happen after the await.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
-    const onSignedOut = () => setUser(null);
+    const onSignedOut = () => {
+      setUser(null);
+      clearCache();
+    };
     window.addEventListener("ev:signed-out", onSignedOut);
     return () => window.removeEventListener("ev:signed-out", onSignedOut);
-  }, [refresh]);
+  }, [refresh, clearCache]);
 
-  const signIn = useCallback((token: string, u: User) => {
-    setToken(token);
-    setUser(u);
-  }, []);
+  const signIn = useCallback(
+    (token: string, u: User) => {
+      clearCache();
+      setToken(token);
+      setUser(u);
+    },
+    [clearCache],
+  );
 
   const signOut = useCallback(async () => {
     try {
@@ -57,7 +77,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setToken(null);
     setUser(null);
-  }, []);
+    clearCache();
+  }, [clearCache]);
 
   const value = useMemo(() => ({ user, loading, signIn, signOut, refresh }), [user, loading, signIn, signOut, refresh]);
 

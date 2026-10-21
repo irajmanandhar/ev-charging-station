@@ -2,9 +2,11 @@ export const DEFAULT_TZ = "Asia/Kathmandu";
 
 const npr = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 
-export function money(value: number | null | undefined): string {
+/** NPR amount. Totals are whole rupees; pass `digits` for unit prices such as NPR 20.50/kWh. */
+export function money(value: number | null | undefined, digits = 0): string {
   if (value == null) return "—";
-  return `NPR ${npr.format(Math.round(value))}`;
+  if (digits === 0) return `NPR ${npr.format(Math.round(value))}`;
+  return `NPR ${value.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: digits })}`;
 }
 
 export function compact(value: number): string {

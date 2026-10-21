@@ -39,6 +39,9 @@ class EmailVerificationController extends BaseController
             if (User::where('email', $email)->lockForUpdate()->exists()) {
                 return null;
             }
+            if ($pending->phone && User::where('phone', $pending->phone)->exists()) {
+                return false;
+            }
 
             // pending_users.password is already a hash; the 'hashed' cast keeps it as-is.
             $user = User::create([
@@ -53,6 +56,9 @@ class EmailVerificationController extends BaseController
             return $user;
         });
 
+        if ($user === false) {
+            return $this->sendError('This phone number is already in use by another account.', 422, ['phone' => ['This phone number is already in use.']]);
+        }
         if (! $user) {
             return $this->sendError('This email is already verified. Please sign in.', 409);
         }

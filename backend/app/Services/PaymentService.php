@@ -93,7 +93,8 @@ class PaymentService
             $live = in_array($booking->status, [BookingStatus::Confirmed, BookingStatus::Active, BookingStatus::Completed], true);
 
             if ($alreadyPaid || ! $live) {
-                $this->flagForRefund($payment, $payment->amount, $alreadyPaid ? 'duplicate_payment' : 'booking_not_active');
+                $owed = $alreadyPaid ? $payment->amount : round(max(0, $payment->amount - (float) $booking->cancellation_fee), 2);
+                $this->flagForRefund($payment, $owed, $alreadyPaid ? 'duplicate_payment' : 'booking_not_active');
 
                 return $payment;
             }
@@ -150,6 +151,7 @@ class PaymentService
             ->where('provider', $this->gateway->name())
             ->where('created_at', '>', now()->subDay())
             ->where('updated_at', '<', now()->subMinutes(2))
+            ->lazyById()
             ->each(function (Payment $payment) use (&$count) {
                 try {
                     $before = $payment->status;

@@ -260,7 +260,7 @@ function StationCard({ station: s, selected, onHover }: { station: Station; sele
             {free} of {total} free
           </span>
           <span className="text-ink-2">Up to {s.summary?.max_power_kw ?? "—"} kW</span>
-          <span className="text-ink-2">from {money(s.summary?.min_price_per_kwh)}/kWh</span>
+          <span className="text-ink-2">from {money(s.summary?.min_price_per_kwh, 2)}/kWh</span>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5">

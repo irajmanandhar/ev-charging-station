@@ -15,6 +15,10 @@ class ConfigController extends BaseController
             'currency' => config('ev.currency'),
             'cancellation_free_minutes' => config('ev.cancellation_free_minutes'),
             'cancellation_fee_percent' => config('ev.cancellation_fee_percent'),
+            'checkin_early_minutes' => config('ev.checkin_early_minutes'),
+            'no_show_grace_minutes' => config('ev.no_show_grace_minutes'),
+            'charge_efficiency' => (float) config('ev.charge_efficiency'),
+            'max_session_kwh' => (float) config('ev.max_session_kwh'),
         ]);
     }
 }

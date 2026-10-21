@@ -109,6 +109,32 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Tailwind 4 resets buttons to the default arrow cursor; anything clickable should show a hand. */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"]:not(:disabled),
+  [role="option"]:not(:disabled):not([aria-disabled="true"]),
+  select:not(:disabled),
+  summary,
+  label:has(> input[type="checkbox"]:not(:disabled)),
+  label:has(> input[type="radio"]:not(:disabled)),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="submit"]:not(:disabled),
+  input[type="button"]:not(:disabled),
+  input[type="file"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  [role="option"][aria-disabled="true"],
+  input:disabled {
+    cursor: not-allowed;
+  }
+}
+
 /* Leaflet: keep the map under the sticky header and match the theme around tiles */
 .leaflet-container {
   font-family: inherit;

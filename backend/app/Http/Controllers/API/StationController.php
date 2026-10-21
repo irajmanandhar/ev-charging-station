@@ -44,6 +44,15 @@ class StationController extends BaseController
             ->when($filters['connector'] ?? null, fn ($q, $c) => $q->whereHas('chargers', fn ($w) => $w->where('connector_type', $c)))
             ->when($filters['min_power'] ?? null, fn ($q, $p) => $q->whereHas('chargers', fn ($w) => $w->where('power_kw', '>=', $p)));
 
+        // Order in SQL before the cap, so the 200 returned are the nearest (or first by name).
+        if ($hasPoint) {
+            $lat = (float) $filters['lat'];
+            $lng = (float) $filters['lng'];
+            $k = cos(deg2rad($lat)) ** 2; // shrink longitude degrees by latitude
+            $query->orderByRaw('((latitude - ?) * (latitude - ?)) + ? * ((longitude - ?) * (longitude - ?))', [$lat, $lat, $k, $lng, $lng]);
+        } else {
+            $query->orderBy('name');
+        }
         $stations = $query->limit(200)->get();
 
         if ($hasPoint) {

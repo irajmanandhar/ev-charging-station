@@ -7,6 +7,7 @@ import { CircleMarker, MapContainer, Marker, Popup, TileLayer, useMap } from "re
 import Link from "next/link";
 import type { Station } from "@/lib/types";
 import { money } from "@/lib/format";
+import { useVisibleMount } from "@/lib/use-visible-mount";
 import { TILE_ATTRIBUTION, TILE_URL } from "@/lib/map-config";
 
 export type LatLng = { lat: number; lng: number };
@@ -36,17 +37,32 @@ function pinIcon(station: Station, selected: boolean): L.DivIcon {
   return icon;
 }
 
+/** Leaflet measures its box once; re-measure when it changes (e.g. a map revealed from display:none). */
+function AutoResize() {
+  const map = useMap();
+  useEffect(() => {
+    // Skip once the map is being torn down (route hidden): Leaflet throws on a removed map.
+    const ro = new ResizeObserver(() => {
+      if (map.getContainer().isConnected && map.getPane("mapPane")) map.invalidateSize({ animate: false });
+    });
+    ro.observe(map.getContainer());
+    return () => ro.disconnect();
+  }, [map]);
+  return null;
+}
+
 function FitTo({ points, center }: { points: LatLng[]; center?: LatLng | null }) {
   const map = useMap();
   const key = points.map((p) => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`).join("|");
   useEffect(() => {
     if (points.length > 1) {
-      map.fitBounds(L.latLngBounds(points.map((p) => [p.lat, p.lng])), { padding: [40, 40], maxZoom: 15 });
+      map.fitBounds(L.latLngBounds(points.map((p) => [p.lat, p.lng])), { padding: [40, 40], maxZoom: 15, animate: false });
     } else if (points.length === 1) {
-      map.setView([points[0].lat, points[0].lng], 14);
+      map.setView([points[0].lat, points[0].lng], 14, { animate: false });
     } else if (center) {
-      map.setView([center.lat, center.lng], 12);
+      map.setView([center.lat, center.lng], 12, { animate: false });
     }
+    // No animation: a pan/zoom still running when the route is hidden would fire on the removed map.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, map]);
   return null;
@@ -72,6 +88,9 @@ export default function StationMap({
     [stations, you],
   );
   const start = you ?? (stations[0] ? { lat: stations[0].latitude, lng: stations[0].longitude } : KATHMANDU);
+  const visible = useVisibleMount();
+
+  if (!visible) return null;
 
   return (
     <MapContainer
@@ -83,6 +102,7 @@ export default function StationMap({
       style={{ height: "100%", width: "100%" }}
     >
       <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />
+      <AutoResize />
       <FitTo points={points} center={start} />
       {you && (
         <CircleMarker
@@ -109,7 +129,7 @@ export default function StationMap({
                 <p className="text-xs opacity-75">{s.address}</p>
                 <p className="mt-1 text-xs">
                   {s.summary?.available ?? 0} of {s.summary?.chargers ?? 0} chargers free · from{" "}
-                  {money(s.summary?.min_price_per_kwh)}/kWh
+                  {money(s.summary?.min_price_per_kwh, 2)}/kWh
                 </p>
                 <Link href={`/stations/${s.id}`} className="mt-2 inline-block text-xs font-semibold text-brand">
                   View &amp; book →

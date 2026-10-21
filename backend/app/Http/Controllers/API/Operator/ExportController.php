@@ -38,7 +38,8 @@ class ExportController extends BaseController
             ->where('starts_at', '>=', $from->copy()->utc())
             ->where('starts_at', '<', $to->copy()->utc())
             ->with(['charger.station', 'user:id,name,email', 'chargingSession'])
-            ->orderBy('starts_at');
+            ->orderBy('starts_at')
+            ->orderBy('id');
 
         $filename = "bookings-{$data['from']}-to-{$data['to']}.csv";
 
@@ -50,7 +51,8 @@ class ExportController extends BaseController
                 'cancellation_fee', 'session_kwh', 'session_cost',
             ]);
 
-            foreach ($query->lazyById() as $b) {
+            // Offset paging: the order is stable and nothing changes mid-export.
+            foreach ($query->lazy(500) as $b) {
                 $s = $b->chargingSession;
                 fputcsv($out, array_map([self::class, 'cell'], [
                     $b->reference, $b->charger->station->name, $b->charger->label, $b->user->name, $b->user->email,

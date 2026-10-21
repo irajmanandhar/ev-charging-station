@@ -16,7 +16,12 @@ const DEMO = [
 
 /** Only allow same-site relative redirects. */
 function safeNext(next: string | null): string | null {
-  return next && next.startsWith("/") && !next.startsWith("//") ? next : null;
+  if (!next || !next.startsWith("/") || next.startsWith("//") || next.includes("\\")) return null;
+  try {
+    return new URL(next, window.location.origin).origin === window.location.origin ? next : null;
+  } catch {
+    return null;
+  }
 }
 
 export function LoginForm() {
@@ -38,6 +43,7 @@ export function LoginForm() {
         body: creds ?? { email, password },
       });
       signIn(data.token, data.user);
+      setPassword("");
       const home = data.user.role === "admin" ? "/admin" : data.user.role === "operator" ? "/operator" : "/";
       router.push(safeNext(params.get("next")) ?? home);
     } catch (err) {

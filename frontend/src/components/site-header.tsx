@@ -66,8 +66,8 @@ export function SiteHeader() {
               </span>
               <button
                 onClick={async () => {
-                  await signOut();
                   router.push("/");
+                  await signOut();
                 }}
                 className="rounded-lg px-3 py-2 text-sm font-medium text-ink-2 hover:bg-surface-2 hover:text-ink"
               >
@@ -115,8 +115,8 @@ export function SiteHeader() {
                 <button
                   onClick={async () => {
                     setOpen(false);
-                    await signOut();
                     router.push("/");
+                    await signOut();
                   }}
                   className="w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium text-ink-2"
                 >
