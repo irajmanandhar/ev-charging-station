@@ -102,3 +102,20 @@ test("the mobile layout has no horizontal scroll", async ({ page }) => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
+
+test("on desktop only the station list scrolls; the page and the map stay put", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 800 });
+  await page.goto("/");
+  const map = page.getByRole("region", { name: "Map of stations" });
+  await expect(map).toBeVisible();
+  await expect(page.locator("a[href^='/stations/']").first()).toBeVisible();
+
+  const pageOverflow = await page.evaluate(() => document.documentElement.scrollHeight - document.documentElement.clientHeight);
+  expect(pageOverflow).toBeLessThanOrEqual(0);
+
+  const mapTop = (await map.boundingBox())!.y;
+  await page.locator("a[href^='/stations/']").first().hover();
+  await page.mouse.wheel(0, 1500);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  expect((await map.boundingBox())!.y).toBe(mapTop);
+});

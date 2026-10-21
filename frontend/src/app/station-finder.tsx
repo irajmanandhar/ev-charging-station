@@ -80,8 +80,10 @@ export function StationFinder() {
   const list = stations ?? [];
   const totalFree = list.reduce((n, s) => n + (s.summary?.available ?? 0), 0);
 
+  // On desktop the finder is exactly one screen tall (below the 4rem header and its 1px border;
+  // flex-none, so flex-1 can't grow it past that height); only the station list scrolls and the map stays put.
   return (
-    <div className="flex flex-1 flex-col lg:h-[calc(100dvh-4rem)] lg:flex-row">
+    <div className="flex flex-1 flex-col lg:h-[calc(100dvh-4rem-1px)] lg:flex-none lg:flex-row lg:overflow-hidden">
       {/* Left: filters + results */}
       <section className="flex w-full flex-col border-line lg:w-[440px] lg:shrink-0 lg:border-r">
         <div className="border-b border-line bg-surface px-4 py-5 sm:px-6">
