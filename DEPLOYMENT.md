@@ -55,10 +55,11 @@ After that, admins promote operators from **Admin → Users**; every change is w
 
 | Variable | Why it matters |
 |---|---|
+| `TRUSTED_PROXIES` | Your TLS proxy's address(es), or `*`. Without it the API sees the proxy's IP for every request (one shared rate-limit bucket) and never sends HSTS. Ports 8000 and 3000 are bound to `127.0.0.1`, so only a proxy on the same host reaches them; change the `ports:` mapping if your proxy runs elsewhere. |
 | `API_URL`, `WEB_URL` | Must be `https://`. `WEB_URL` becomes the only allowed CORS origin and the social-login redirect target. |
 | `MAIL_*` | Sign-up and password-reset codes and booking emails are sent by email. Without working SMTP nobody can register. |
 | `SANCTUM_TOKEN_EXPIRATION_MINUTES` | Lifetime of a login (default 7 days). |
-| `PAYMENTS_DRIVER` | `none`, `khalti` or `esewa`. Both gateways default to their **sandbox** URLs; change `KHALTI_BASE_URL` / `ESEWA_*` only after the provider has approved your merchant account. |
+| `PAYMENTS_DRIVER` | `none`, `khalti` or `esewa`. The gateways default to their **sandbox** URLs and the production guard refuses to start with a gateway enabled against a sandbox, so leave this at `none` until the provider has approved your merchant account; then set the live `KHALTI_BASE_URL` / `ESEWA_*` values and keys. |
 | `TILE_URL`, `TILE_ATTRIBUTION` | Build-time. The public OpenStreetMap server must not carry production traffic. |
 | `LOG_SLACK_WEBHOOK_URL` | Optional error alerts. To send errors there, set `LOG_STACK=stderr,slack` and `LOG_SLACK_WEBHOOK_URL` in the compose file's API environment; another monitor (Sentry, Flare, Bugsnag) can be added with its Laravel package and DSN variable. |
 
@@ -108,7 +109,8 @@ gunzip -c /backups/ev-2026-01-01.sql.gz | docker compose -f docker-compose.prod.
 - [ ] Book, check in, stop and cancel as a driver; open the operator dashboard; export a CSV
 - [ ] A map tile provider with a production agreement is configured
 - [ ] Backups run, and a restore has been tested
-- [ ] `PAYMENTS_DRIVER` is still the sandbox or `none` until your merchant account is approved
+- [ ] `PAYMENTS_DRIVER` is `none` until your merchant account is approved (then live URLs and keys)
+- [ ] `TRUSTED_PROXIES` matches your proxy, and a request through it shows real client IPs in the API logs
 - [ ] The first admin account exists, and the demo accounts do not (they only exist in the development stack)
 - [ ] Social login (if used): redirect URIs in the Google/Facebook consoles point at `API_URL`
 - [ ] Nepali translations reviewed by a native speaker if you advertise the language switch
@@ -116,5 +118,7 @@ gunzip -c /backups/ev-2026-01-01.sql.gz | docker compose -f docker-compose.prod.
 ## Known limits
 
 - The browser keeps the login token in `localStorage` (a bearer-token SPA). Keep third-party scripts out of the site and keep token lifetime short.
-- Online refunds are not automated: Khalti and eSewa have no public refund API, so refunds are flagged `refund_pending` for a person to action in the provider dashboard.
+- Online refunds are not automated: Khalti and eSewa have no public refund API. Payments that need money returned (cancelled after paying, no-show, duplicate payment, paid after the booking died) are set to `refund_pending`, with the amount and reason in `payments.payload` (`refund_owed`, `refund_reason`), for a person to action in the provider dashboard. `php artisan tinker --execute="echo App\Models\Payment::where('status','refund_pending')->count();"` shows the backlog.
+- A driver who pays but closes the tab is still settled: the scheduler re-checks unconfirmed payments with the provider every five minutes for a day (`payments:reconcile`).
+- Social login uses a signed, expiring `state`, but it is not bound to the browser that started the login (the flow is stateless).
 - Rate limits use the application cache (`database` store in this stack). With several API replicas that is shared; with the `array` store (tests only) it is per process.

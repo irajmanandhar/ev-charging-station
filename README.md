@@ -92,7 +92,8 @@ cd frontend && npm run test:e2e                 # Playwright: boots its own API 
 - **Limits:** a driver can hold at most 3 upcoming bookings, and can't have two bookings that overlap. A driver's own requests are serialised (user row lock, then charger row lock, always in that order), so two tabs can't slip past those limits.
 - **Cancellation:** free until `cancellation_free_minutes` (60) before the start; later cancellations keep `cancellation_fee_percent` (20 %) of the estimated cost. A paid booking is refunded minus the fee where the payment provider has a refund API, otherwise the payment is flagged `refund_pending` for the operator.
 - **Emails** (queued): booking confirmed, reminder `reminder_minutes_before` (30) before the start, cancelled, and missed (no-show). Run `php artisan bookings:remind` (the scheduler does it every minute).
-- **Payments (sandbox):** `PaymentService` talks to a `PaymentGateway` interface with `none` (default), `khalti` and `esewa` implementations. The driver is redirected to the provider and the API verifies the result with the provider before marking the booking paid. See `config/payments.php`.
+- **Payments (sandbox):** the browser return and a scheduled `payments:reconcile` both settle a payment by asking the provider; a payment that completes for a booking that is no longer live is flagged `refund_pending` (amount and reason stored) instead of being kept silently.
+- **Payments (sandbox), gateways:** `PaymentService` talks to a `PaymentGateway` interface with `none` (default), `khalti` and `esewa` implementations. The driver is redirected to the provider and the API verifies the result with the provider before marking the booking paid. See `config/payments.php`.
 
 Rules live in `backend/config/ev.php`. Business logic lives in `app/Services/` (`BookingService`, `AvailabilityService`, `PricingService`, `MetricsService`), and the controllers stay thin.
 

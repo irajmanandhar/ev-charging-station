@@ -253,19 +253,31 @@ class BookingService
      */
     public function sweep(): array
     {
-        $missed = Booking::query()
-            ->with('user')
+        $noShows = 0;
+        Booking::query()
             ->where('status', BookingStatus::Confirmed->value)
             ->where('starts_at', '<', now()->subMinutes(config('ev.no_show_grace_minutes')))
-            ->get();
+            ->chunkById(200, function ($batch) use (&$noShows) {
+                // Re-check status in the UPDATE so a booking checked in meanwhile is not clobbered.
+                Booking::query()
+                    ->whereIn('id', $batch->modelKeys())
+                    ->where('status', BookingStatus::Confirmed->value)
+                    ->update(['status' => BookingStatus::NoShow->value, 'updated_at' => now()]);
 
-        // Re-check status in the UPDATE so a booking checked in meanwhile is not clobbered.
-        $noShows = Booking::query()
-            ->whereIn('id', $missed->modelKeys())
-            ->where('status', BookingStatus::Confirmed->value)
-            ->update(['status' => BookingStatus::NoShow->value, 'updated_at' => now()]);
-
-        $missed->each(fn (Booking $b) => $b->user->notify(new BookingNoShow($b)));
+                // Only bookings that really became no-shows get the email and the payment flag.
+                Booking::query()->with('user')->whereIn('id', $batch->modelKeys())
+                    ->where('status', BookingStatus::NoShow->value)
+                    ->get()
+                    ->each(function (Booking $b) use (&$noShows) {
+                        $noShows++;
+                        try {
+                            $this->payments->flagNoShow($b);
+                            $b->user->notify(new BookingNoShow($b));
+                        } catch (\Throwable $e) {
+                            report($e); // one bad mailbox must not stop the sweep
+                        }
+                    });
+            });
 
         $stopped = 0;
         ChargingSession::query()

@@ -3,6 +3,7 @@
 use App\Enums\UserRole;
 use App\Models\User;
 use App\Services\BookingService;
+use App\Services\PaymentService;
 use App\Support\ProductionChecks;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -63,7 +64,12 @@ Artisan::command('bookings:remind', function (BookingService $bookings) {
     $this->info('Reminders sent: '.$bookings->sendReminders());
 })->purpose('Email drivers whose booking starts soon');
 
+Artisan::command('payments:reconcile', function (PaymentService $payments) {
+    $this->info('Payments settled: '.$payments->reconcile());
+})->purpose('Re-check payments that were started but never confirmed by the browser');
+
 Schedule::command('bookings:sweep')->everyMinute()->withoutOverlapping();
 Schedule::command('bookings:remind')->everyMinute()->withoutOverlapping();
+Schedule::command('payments:reconcile')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('auth:prune')->daily();
 Schedule::command('sanctum:prune-expired --hours=24')->daily();

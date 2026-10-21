@@ -46,6 +46,22 @@ class ProductionChecksTest extends TestCase
         $this->assertSame([], ProductionChecks::problems($this->good(['payments_driver' => 'khalti', 'khalti_key' => 'live_secret'])));
     }
 
+    public function test_sandbox_payment_endpoints_are_rejected_in_production(): void
+    {
+        $khalti = $this->good(['payments_driver' => 'khalti', 'khalti_key' => 'k', 'khalti_url' => 'https://dev.khalti.com/api/v2']);
+        $this->assertCount(1, ProductionChecks::problems($khalti));
+        $this->assertSame([], ProductionChecks::problems([...$khalti, 'khalti_url' => 'https://khalti.com/api/v2']));
+
+        $esewa = $this->good([
+            'payments_driver' => 'esewa', 'esewa_key' => 'k', 'esewa_code' => 'EPAYTEST',
+            'esewa_form_url' => 'https://rc-epay.esewa.com.np/api/epay/main/v2/form',
+            'esewa_status_url' => 'https://rc.esewa.com.np/api/epay/transaction/status/',
+        ]);
+        $this->assertCount(1, ProductionChecks::problems($esewa));
+        $live = [...$esewa, 'esewa_code' => 'LIVE123', 'esewa_form_url' => 'https://epay.esewa.com.np/api/epay/main/v2/form', 'esewa_status_url' => 'https://esewa.com.np/api/epay/transaction/status/'];
+        $this->assertSame([], ProductionChecks::problems($live));
+    }
+
     public function test_localhost_variants_are_detected_in_cors_origins(): void
     {
         foreach (['http://localhost:3000', 'http://127.0.0.1:3000', 'localhost'] as $origin) {

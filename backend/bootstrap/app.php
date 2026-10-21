@@ -31,6 +31,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Behind the TLS proxy, request()->ip() and isSecure() must come from its X-Forwarded-* headers,
+        // otherwise every user shares one rate-limit bucket and HSTS is never sent.
+        if ($proxies = env('TRUSTED_PROXIES')) {
+            $middleware->trustProxies(at: $proxies === '*' ? '*' : array_map('trim', explode(',', $proxies)));
+        }
         $middleware->alias(['role' => EnsureRole::class]);
         $middleware->append(SecurityHeaders::class);
     })

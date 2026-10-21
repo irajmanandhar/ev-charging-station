@@ -3,7 +3,9 @@ set -euo pipefail
 
 cd /var/www
 
-if [ "${APP_ENV:-production}" = "production" ]; then
+case "${APP_ENV:-production}" in local|testing) DEV=1 ;; *) DEV=0 ;; esac
+
+if [ "$DEV" = "0" ]; then
   # Refuse to start with development settings (debug on, OTP echoed, sqlite, ...).
   php artisan env:check
 else
@@ -25,7 +27,7 @@ if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
   php artisan migrate --force
 
   if [ "${SEED_DEMO_DATA:-false}" = "true" ]; then
-    if [ "${APP_ENV:-production}" = "production" ]; then
+    if [ "$DEV" = "0" ]; then
       echo "Refusing to seed demo accounts (known passwords) in production." >&2
       exit 1
     fi
@@ -33,7 +35,7 @@ if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
   fi
 fi
 
-if [ "${APP_ENV:-production}" = "production" ]; then
+if [ "$DEV" = "0" ]; then
   php artisan config:cache
   php artisan route:cache
   php artisan event:cache

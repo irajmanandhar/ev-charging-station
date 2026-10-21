@@ -51,7 +51,7 @@ class EsewaGateway implements PaymentGateway
         ];
     }
 
-    public function verify(Payment $payment, array $params): bool
+    public function verify(Payment $payment, array $params): string
     {
         $total = number_format((float) $payment->amount, 2, '.', '');
 
@@ -61,7 +61,15 @@ class EsewaGateway implements PaymentGateway
             'transaction_uuid' => $payment->reference,
         ]);
 
-        return $res->successful() && $res->json('status') === 'COMPLETE';
+        if (! $res->successful()) {
+            return Payment::INITIATED; // provider unreachable: unknown, not "failed"; try again later
+        }
+
+        return match ($res->json('status')) {
+            'COMPLETE' => abs((float) $res->json('total_amount') - (float) $payment->amount) < 0.005 ? Payment::COMPLETED : Payment::FAILED,
+            'PENDING', 'AMBIGUOUS', 'NOT_FOUND' => Payment::INITIATED, // NOT_FOUND: the driver has not paid yet
+            default => Payment::FAILED, // CANCELED, FULL_REFUND, ...
+        };
     }
 
     public function refund(Payment $payment, float $amount): bool

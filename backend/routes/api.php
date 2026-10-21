@@ -33,8 +33,10 @@ Route::middleware('throttle:auth')->group(function () {
     });
 });
 
-Route::get('/auth/{provider}/redirect', [SocialAuthController::class, 'redirectToProvider']);
-Route::get('/auth/{provider}/callback', [SocialAuthController::class, 'handleProviderCallback']);
+Route::middleware('throttle:public')->group(function () {
+    Route::get('/auth/{provider}/redirect', [SocialAuthController::class, 'redirectToProvider']);
+    Route::get('/auth/{provider}/callback', [SocialAuthController::class, 'handleProviderCallback']);
+});
 
 /*
 |--------------------------------------------------------------------------

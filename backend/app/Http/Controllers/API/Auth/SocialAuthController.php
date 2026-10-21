@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\API\Auth;
 
 use App\Http\Controllers\API\BaseController;
+use App\Http\Resources\UserResource;
+use App\Support\SocialState;
 use Illuminate\Http\Request;
 use Laravel\Socialite\Facades\Socialite;
 use App\Models\User;
@@ -20,11 +22,12 @@ class SocialAuthController extends BaseController
             if (!in_array($provider, ['google', 'facebook'])) {
                 return $this->sendError('Invalid provider', 400);
             }
+            $driver = Socialite::driver($provider)->stateless()->with(['state' => SocialState::issue()]);
             if ($request->wantsJson()) {
-                $url = Socialite::driver($provider)->stateless()->redirect()->getTargetUrl();
+                $url = $driver->redirect()->getTargetUrl();
                 return $this->sendResponse(['url' => $url], 'Redirect URL generated');
             } else {
-                return Socialite::driver($provider)->stateless()->redirect();
+                return $driver->redirect();
             }
         } catch (Exception $e) {
             report($e);
@@ -38,6 +41,11 @@ class SocialAuthController extends BaseController
         try {
             if (!in_array($provider, ['google', 'facebook'])) {
                 return $this->sendError('Invalid provider', 400);
+            }
+
+            // The state we signed when the login started: stops forged callback links.
+            if (! SocialState::valid((string) $request->query('state'))) {
+                return $this->sendError('This sign-in link is invalid or has expired. Please start again.', 422);
             }
 
             $socialUser = Socialite::driver($provider)->stateless()->user();
@@ -117,7 +125,7 @@ class SocialAuthController extends BaseController
     {
         if ($request->wantsJson()) {
             return $this->sendResponse(
-                ['token' => $token, 'user' => $user],
+                ['token' => $token, 'user' => new UserResource($user)],
                 $message
             );
         } else {

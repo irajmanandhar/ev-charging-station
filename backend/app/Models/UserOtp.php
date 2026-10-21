@@ -10,15 +10,13 @@ use Illuminate\Database\Eloquent\Model;
 
 class UserOtp extends Model
 {
-    /** Wrong guesses allowed per code before it is burned. */
-    public const MAX_ATTEMPTS = 5;
-
     protected $fillable = [
         'email',
         'otp',
         'type',
         'expires_at',
-        'is_used'
+        'is_used',
+        'attempts',
     ];
 
     /** The plain code, only available on the instance returned by generateOtp(). */
@@ -47,6 +45,14 @@ class UserOtp extends Model
 
     public static function generateOtp($email, $type = 'email_verification')
     {
+        // Wrong guesses carry over to the replacement code, so asking for a new code
+        // can't be used to get a fresh set of guesses.
+        $carried = (int) self::where('email', $email)
+            ->where('type', $type)
+            ->where('is_used', false)
+            ->where('expires_at', '>', now())
+            ->max('attempts');
+
         self::where('email', $email)
             ->where('type', $type)
             ->where('is_used', false)
@@ -58,8 +64,9 @@ class UserOtp extends Model
             'email' => $email,
             'otp' => self::digest($email, $type, $otp),
             'type' => $type,
-            'expires_at' => now()->addMinutes(10),
-            'is_used' => false
+            'expires_at' => now()->addMinutes((int) config('ev.otp_ttl_minutes')),
+            'is_used' => false,
+            'attempts' => $carried,
         ]);
 
         $otpRecord->plain = $otp;
@@ -112,12 +119,14 @@ class UserOtp extends Model
             ->latest('id')
             ->first();
 
-        if (! $record || $record->attempts >= self::MAX_ATTEMPTS) {
+        $max = (int) config('ev.otp_max_attempts');
+        if (! $record || $record->attempts >= $max) {
             return false;
         }
 
         if (! hash_equals($record->otp, self::digest($email, $type, (string) $otp))) {
-            $record->increment('attempts');
+            // Atomic: parallel guesses can't squeeze past the limit.
+            self::whereKey($record->id)->where('attempts', '<', $max)->increment('attempts');
 
             return false;
         }

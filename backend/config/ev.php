@@ -26,6 +26,13 @@ return [
     // Used for operator/admin dashboards, which span stations
     'default_timezone' => 'Asia/Kathmandu',
 
+    // One-time codes (sign-up, password reset)
+    'otp_ttl_minutes' => 10,
+    'otp_max_attempts' => 5,
+
+    // Operator CSV export: longest range in days
+    'export_max_days' => 93,
+
     'currency' => 'NPR',
 
     // Only ever honoured in local/testing environments; lets you finish sign-up without a mail server.

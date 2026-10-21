@@ -11,8 +11,6 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ExportController extends BaseController
 {
-    private const MAX_DAYS = 93;
-
     /** CSV of bookings (with session energy and cost) at the operator's stations. Query: from, to (YYYY-MM-DD, local), station_id */
     public function bookings(Request $request): StreamedResponse
     {
@@ -26,7 +24,8 @@ class ExportController extends BaseController
 
         $from = Carbon::parse($data['from'], $tz)->startOfDay();
         $to = Carbon::parse($data['to'], $tz)->addDay()->startOfDay();
-        abort_if($from->diffInDays($to) > self::MAX_DAYS, 422, 'Pick a range of '.self::MAX_DAYS.' days or less.');
+        $max = (int) config('ev.export_max_days');
+        abort_if($from->diffInDays($to) > $max, 422, "Pick a range of {$max} days or less.");
 
         $stationIds = Station::query()
             ->when(! $user->isAdmin(), fn ($q) => $q->where('operator_id', $user->id))

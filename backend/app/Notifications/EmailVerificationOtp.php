@@ -7,7 +7,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class EmailVerificationOtp extends Notification
+class EmailVerificationOtp extends Notification implements ShouldQueue
 {
     use Queueable;
 

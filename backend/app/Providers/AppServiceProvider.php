@@ -33,7 +33,7 @@ class AppServiceProvider extends ServiceProvider
     {
         // Refuse to serve requests with development settings. CLI boots (image build, artisan)
         // are exempt; the container entrypoint runs `php artisan env:check` before starting.
-        if ($this->app->isProduction() && ! $this->app->runningInConsole()) {
+        if (! $this->app->environment('local', 'testing') && ! $this->app->runningInConsole()) {
             $problems = ProductionChecks::fromConfig();
             if ($problems) {
                 throw new \RuntimeException("Unsafe production configuration:\n- ".implode("\n- ", $problems));

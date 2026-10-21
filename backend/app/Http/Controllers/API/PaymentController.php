@@ -32,13 +32,18 @@ class PaymentController extends BaseController
     /** Called when the driver comes back from the provider. The provider is asked directly; the client's claim is not trusted. */
     public function confirm(Request $request, Payment $payment): JsonResponse
     {
-        abort_unless($payment->user_id === $request->user()->id, 403);
+        $this->authorize('confirm', $payment);
 
         $payment = $this->payments->confirm($payment, $request->only(['pidx', 'data', 'status']));
 
         return $this->sendResponse(
             ['id' => $payment->id, 'status' => $payment->status, 'booking_id' => $payment->booking_id],
-            $payment->status === Payment::COMPLETED ? 'Payment received.' : 'Payment was not completed.'
+            match ($payment->status) {
+                Payment::COMPLETED => 'Payment received.',
+                Payment::INITIATED => 'Your payment is still being processed. We will update your booking when the provider confirms it.',
+                Payment::REFUND_PENDING => 'Payment received, but the booking is no longer active. A refund will be arranged.',
+                default => 'Payment was not completed.',
+            }
         );
     }
 }

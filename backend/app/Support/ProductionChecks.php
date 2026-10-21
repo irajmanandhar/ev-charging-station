@@ -44,11 +44,24 @@ class ProductionChecks
             $problems[] = 'QUEUE_CONNECTION=sync sends email inside the request; use database or redis and run a queue worker.';
         }
         $driver = $c['payments_driver'] ?? 'none';
-        if ($driver === 'khalti' && empty($c['khalti_key'])) {
-            $problems[] = 'PAYMENTS_DRIVER=khalti needs KHALTI_SECRET_KEY.';
+        if ($driver === 'khalti') {
+            if (empty($c['khalti_key'])) {
+                $problems[] = 'PAYMENTS_DRIVER=khalti needs KHALTI_SECRET_KEY.';
+            }
+            if (str_contains((string) ($c['khalti_url'] ?? ''), 'dev.khalti.com')) {
+                $problems[] = 'PAYMENTS_DRIVER=khalti still points at the Khalti SANDBOX; set KHALTI_BASE_URL to the live API once approved (or use PAYMENTS_DRIVER=none).';
+            }
         }
-        if ($driver === 'esewa' && empty($c['esewa_key'])) {
-            $problems[] = 'PAYMENTS_DRIVER=esewa needs ESEWA_SECRET_KEY.';
+        if ($driver === 'esewa') {
+            if (empty($c['esewa_key'])) {
+                $problems[] = 'PAYMENTS_DRIVER=esewa needs ESEWA_SECRET_KEY.';
+            }
+            $sandbox = str_contains((string) ($c['esewa_form_url'] ?? ''), 'rc-epay')
+                || str_contains((string) ($c['esewa_status_url'] ?? ''), '//rc.esewa')
+                || ($c['esewa_code'] ?? '') === 'EPAYTEST';
+            if ($sandbox) {
+                $problems[] = 'PAYMENTS_DRIVER=esewa still uses the eSewa SANDBOX (rc-epay URLs / EPAYTEST); set the live ESEWA_* values once approved (or use PAYMENTS_DRIVER=none).';
+            }
         }
 
         return $problems;
@@ -70,6 +83,10 @@ class ProductionChecks
             'payments_driver' => config('payments.driver'),
             'khalti_key' => config('payments.khalti.secret_key'),
             'esewa_key' => config('payments.esewa.secret_key'),
+            'khalti_url' => config('payments.khalti.base_url'),
+            'esewa_form_url' => config('payments.esewa.form_url'),
+            'esewa_status_url' => config('payments.esewa.status_url'),
+            'esewa_code' => config('payments.esewa.product_code'),
         ]);
     }
 

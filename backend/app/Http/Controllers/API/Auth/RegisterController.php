@@ -40,14 +40,20 @@ class RegisterController extends BaseController
             ]);
         }
 
-        PendingUser::updateOrCreate(
-            ['email' => $email],
-            [
-                'name' => $data['name'],
-                'phone' => $data['phone'] ?? null,
-                'password' => Hash::make($data['password']),
-            ]
-        );
+        // A sign-up already waiting for its code keeps its original details: otherwise anyone could
+        // re-register someone else's email with their own password before the real owner enters the code.
+        // Re-submitting just re-sends a code for the original details.
+        $pending = PendingUser::where('email', $email)->first();
+        if (! $pending || $pending->updated_at->lt(now()->subMinutes((int) config('ev.otp_ttl_minutes')))) {
+            PendingUser::updateOrCreate(
+                ['email' => $email],
+                [
+                    'name' => $data['name'],
+                    'phone' => $data['phone'] ?? null,
+                    'password' => Hash::make($data['password']),
+                ]
+            )->touch();
+        }
 
         $otp = UserOtp::generateOtp($email, 'email_verification');
 

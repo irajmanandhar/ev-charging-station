@@ -204,7 +204,7 @@ class HardeningTest extends TestCase
         $this->assertNotSame($plain, UserOtp::first()->otp);
 
         $wrong = $plain === '000000' ? '111111' : '000000';
-        for ($i = 0; $i < UserOtp::MAX_ATTEMPTS; $i++) {
+        for ($i = 0; $i < config('ev.otp_max_attempts'); $i++) {
             $this->postJson('/api/verify-email-otp', ['email' => 'otp@example.com', 'otp' => $wrong])->assertStatus(422);
             $this->app['cache']->flush(); // keep the HTTP throttle out of this test
         }
@@ -259,7 +259,7 @@ class HardeningTest extends TestCase
         $social->user = ['email_verified' => false];
         Socialite::shouldReceive('driver->stateless->user')->andReturn($social);
 
-        $this->getJson('/api/auth/facebook/callback')->assertStatus(409);
+        $this->getJson('/api/auth/facebook/callback?state='.\App\Support\SocialState::issue())->assertStatus(409);
         $this->assertDatabaseCount('auth_providers', 0);
     }
 }

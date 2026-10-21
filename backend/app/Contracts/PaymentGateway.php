@@ -16,8 +16,11 @@ interface PaymentGateway
      */
     public function initiate(Payment $payment, string $returnUrl): array;
 
-    /** Ask the provider whether the payment really went through. Never trust the client's word. */
-    public function verify(Payment $payment, array $params): bool;
+    /**
+     * Ask the provider what really happened. Never trust the client's word.
+     * Returns Payment::COMPLETED, Payment::INITIATED (provider says still pending) or Payment::FAILED.
+     */
+    public function verify(Payment $payment, array $params): string;
 
     /** Refund part or all of a completed payment. False when the provider can't do it via API. */
     public function refund(Payment $payment, float $amount): bool;

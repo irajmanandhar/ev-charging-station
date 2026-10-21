@@ -19,9 +19,9 @@ class NullGateway implements PaymentGateway
         throw new DomainRuleException('Online payments are not enabled.', 'payments_disabled');
     }
 
-    public function verify(Payment $payment, array $params): bool
+    public function verify(Payment $payment, array $params): string
     {
-        return false;
+        return Payment::FAILED;
     }
 
     public function refund(Payment $payment, float $amount): bool

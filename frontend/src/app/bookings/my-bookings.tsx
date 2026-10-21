@@ -59,21 +59,30 @@ export function MyBookings() {
     }
     if (!id || confirming.current) return;
     confirming.current = true;
-    try {
-      window.sessionStorage.removeItem(PENDING_PAYMENT);
-    } catch {
-      /* storage unavailable */
-    }
+    const forget = () => {
+      try {
+        window.sessionStorage.removeItem(PENDING_PAYMENT);
+      } catch {
+        /* storage unavailable */
+      }
+    };
     const params = new URLSearchParams(window.location.search);
     api<{ status: string }>(`/payments/${id}/confirm`, {
       method: "POST",
       body: { pidx: params.get("pidx") ?? undefined, data: params.get("data") ?? undefined, status: params.get("status") ?? undefined },
     })
       .then(({ data, message }) => {
+        // "initiated" means the provider is still processing: keep the id so the next visit checks again
+        // (the server also re-checks in the background).
+        if (data.status !== "initiated") forget();
         toast(message, data.status === "completed" ? "success" : "error");
         mutate();
       })
-      .catch((e) => toast(e instanceof ApiError ? e.message : "Couldn't confirm the payment.", "error"));
+      .catch((e) => {
+        // A network blip must not lose the payment; a 403/404 means the id is useless.
+        if (e instanceof ApiError && (e.status === 403 || e.status === 404)) forget();
+        toast(e instanceof ApiError ? e.message : "Couldn't confirm the payment.", "error");
+      });
     window.history.replaceState(null, "", window.location.pathname);
   }, [mutate, toast]);
 

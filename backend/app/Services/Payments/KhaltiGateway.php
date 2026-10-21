@@ -45,13 +45,19 @@ class KhaltiGateway implements PaymentGateway
         return ['reference' => $res->json('pidx'), 'redirect_url' => $res->json('payment_url')];
     }
 
-    public function verify(Payment $payment, array $params): bool
+    public function verify(Payment $payment, array $params): string
     {
         $res = $this->http()->post('/epayment/lookup/', ['pidx' => $payment->reference]);
 
-        return $res->successful()
-            && $res->json('status') === 'Completed'
-            && (int) $res->json('total_amount') === (int) round($payment->amount * 100);
+        if (! $res->successful()) {
+            return Payment::INITIATED; // provider unreachable: unknown, not "failed"; try again later
+        }
+
+        return match ($res->json('status')) {
+            'Completed' => (int) $res->json('total_amount') === (int) round($payment->amount * 100) ? Payment::COMPLETED : Payment::FAILED,
+            'Pending', 'Initiated' => Payment::INITIATED,
+            default => Payment::FAILED, // Expired, User canceled, Refunded, ...
+        };
     }
 
     public function refund(Payment $payment, float $amount): bool
