@@ -43,16 +43,30 @@ test("an operator cannot open another operator's station", async ({ page, reques
   await expect(page.getByRole("alert").filter({ hasText: "belongs to another operator" })).toBeVisible();
 });
 
-test("an admin reviews users and pauses a station", async ({ page }) => {
-  await signIn(page, "admin@evcharge.test", "password");
-  await expect(page).toHaveURL(/\/admin/);
+test("an admin reviews users and pauses a station", async ({ page, request }) => {
+  const base = `http://localhost:${process.env.E2E_API_PORT ?? "8100"}/api`;
+  const auth = await request.post(`${base}/login`, { data: { email: "admin@evcharge.test", password: "password" } });
+  const headers = { Authorization: `Bearer ${(await auth.json()).data.token as string}` };
+  const station = (await (await request.get(`${base}/admin/stations`, { headers })).json()).data[0] as { id: number; name: string; status: string };
 
-  await page.getByRole("link", { name: "Users" }).click();
-  await expect(page.getByText("driver@evcharge.test")).toBeVisible();
+  try {
+    await signIn(page, "admin@evcharge.test", "password");
+    await expect(page).toHaveURL(/\/admin/);
 
-  await page.getByRole("link", { name: "Stations" }).last().click();
-  const select = page.getByRole("combobox").first();
-  await select.selectOption("maintenance");
-  await expect(page.getByText(/set to maintenance/i)).toBeVisible();
-  await select.selectOption("active"); // put it back so other tests are unaffected
+    await page.getByRole("link", { name: "Users" }).click();
+    await expect(page.getByText("driver@evcharge.test")).toBeVisible();
+
+    await page.getByRole("link", { name: "Stations" }).last().click();
+    // The list loads asynchronously; address this station's own control by its accessible name.
+    await expect(page.getByRole("heading", { name: "All stations" })).toBeVisible();
+    const status = page.getByRole("combobox", { name: `Status for ${station.name}` });
+    await expect(status).toBeVisible();
+
+    await status.selectOption("maintenance");
+    await expect(page.getByText(`${station.name} set to maintenance.`)).toBeVisible();
+    await expect(status).toHaveValue("maintenance");
+  } finally {
+    // Put the station back even if an assertion failed, so later tests see the seeded data.
+    await request.patch(`${base}/admin/stations/${station.id}/status`, { headers, data: { status: station.status } });
+  }
 });
