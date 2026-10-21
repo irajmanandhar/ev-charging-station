@@ -8,3 +8,4 @@ database.sqlite
 storage/logs/
 *.log
 .next/
+.playwright-mcp/
