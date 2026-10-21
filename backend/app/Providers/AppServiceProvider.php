@@ -6,6 +6,7 @@ use App\Contracts\PaymentGateway;
 use App\Services\Payments\EsewaGateway;
 use App\Services\Payments\KhaltiGateway;
 use App\Services\Payments\NullGateway;
+use App\Support\ProductionChecks;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -30,6 +31,15 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Refuse to serve requests with development settings. CLI boots (image build, artisan)
+        // are exempt; the container entrypoint runs `php artisan env:check` before starting.
+        if ($this->app->isProduction() && ! $this->app->runningInConsole()) {
+            $problems = ProductionChecks::fromConfig();
+            if ($problems) {
+                throw new \RuntimeException("Unsafe production configuration:\n- ".implode("\n- ", $problems));
+            }
+        }
+
         // Auth endpoints: keyed by email as well as IP so one address can't be hammered from many IPs.
         RateLimiter::for('auth', fn (Request $request) => [
             Limit::perMinute(10)->by('ip:'.$request->ip()),

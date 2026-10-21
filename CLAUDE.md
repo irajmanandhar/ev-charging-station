@@ -8,7 +8,9 @@
 ## Commands
 - Backend tests: `cd backend && php artisan test`
 - Backend lint: `cd backend && vendor/bin/pint`
-- Frontend lint: `cd frontend && npm run lint`
+- Frontend lint / typecheck / unit tests: `cd frontend && npm run lint && npm run typecheck && npm test`
+- End-to-end: `cd frontend && npm run test:e2e`
+- API contract: update `backend/openapi.yaml` when routes change (`OpenApiTest` checks it)
 - Frontend build: `cd frontend && npm run build`
 - Frontend dev: `cd frontend && npm run dev`
 

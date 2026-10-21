@@ -1,7 +1,9 @@
 <?php
 
+use App\Enums\UserRole;
 use App\Models\User;
 use App\Services\BookingService;
+use App\Support\ProductionChecks;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
@@ -20,6 +22,36 @@ Artisan::command('demo:seed-if-empty', function () {
     $this->info('Seeding demo data...');
     $this->call('db:seed', ['--force' => true]);
 })->purpose('Seed demo data on a fresh database (used by Docker)');
+
+Artisan::command('env:check', function () {
+    $problems = ProductionChecks::fromConfig();
+    foreach ($problems as $problem) {
+        $this->error($problem);
+    }
+    if (! $problems) {
+        $this->info('Environment looks production-safe.');
+    }
+
+    return $problems ? 1 : 0;
+})->purpose('Fail if the environment has development settings (used by the production entrypoint)');
+
+Artisan::command('user:set-role {email} {role : driver, operator or admin}', function (string $email, string $role) {
+    $enum = UserRole::tryFrom($role);
+    if (! $enum) {
+        $this->error('Role must be driver, operator or admin.');
+
+        return 1;
+    }
+    $user = User::where('email', strtolower($email))->first();
+    if (! $user) {
+        $this->error("No user with email {$email}.");
+
+        return 1;
+    }
+    $user->role = $enum;
+    $user->save();
+    $this->info("{$user->email} is now {$enum->value}.");
+})->purpose('Set a user role from the command line (create the first admin)');
 
 Artisan::command('auth:prune', function () {
     $otps = DB::table('user_otps')->where('expires_at', '<', now()->subDay())->delete();

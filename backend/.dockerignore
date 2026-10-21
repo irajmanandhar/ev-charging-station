@@ -6,3 +6,6 @@ storage/framework/sessions/*
 storage/framework/views/*
 database/*.sqlite
 .phpunit.cache
+bootstrap/cache/*.php
+tests
+storage/framework/testing

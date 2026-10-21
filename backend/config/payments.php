@@ -2,11 +2,12 @@
 
 return [
     /*
-    | Payment gateway: "null" (online payments off, default), "khalti" or "esewa".
+    | Payment gateway: "none" (online payments off, default), "khalti" or "esewa".
     | Both gateways point at their SANDBOX by default; switch the URLs and keys only
     | after the provider has approved your merchant account.
     */
-    'driver' => env('PAYMENTS_DRIVER', 'null'),
+    // Note: env() turns the text "null" into PHP null, so anything but khalti/esewa means off.
+    'driver' => env('PAYMENTS_DRIVER') ?: 'none',
 
     // Where the gateway sends the driver back to after paying.
     'return_url' => env('PAYMENTS_RETURN_URL', rtrim((string) env('FRONTEND_URL', 'http://localhost:3000'), '/').'/bookings'),

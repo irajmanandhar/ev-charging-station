@@ -15,8 +15,8 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${WEB_PORT}`,
     trace: "retain-on-failure",
-    // Locally use the installed Chrome; CI installs Playwright's own Chromium (E2E_CHANNEL="").
-    channel: process.env.E2E_CHANNEL ?? (process.env.CI ? undefined : "chrome"),
+    // Locally use the installed Chrome; CI installs Playwright's own Chromium (CI is set).
+    channel: process.env.E2E_CHANNEL || (process.env.CI ? undefined : "chrome"),
   },
   webServer: [
     {

@@ -3,15 +3,18 @@ set -euo pipefail
 
 cd /var/www
 
-if [ ! -f .env ]; then
-  cp .env.example .env
+if [ "${APP_ENV:-production}" = "production" ]; then
+  # Refuse to start with development settings (debug on, OTP echoed, sqlite, ...).
+  php artisan env:check
+else
+  # Local development convenience: create .env and a key on first run.
+  [ -f .env ] || cp .env.example .env
+  if ! grep -q "^APP_KEY=base64" .env && [ -z "${APP_KEY:-}" ]; then
+    php artisan key:generate --force
+  fi
 fi
 
-if ! grep -q "^APP_KEY=base64" .env && [ -z "${APP_KEY:-}" ]; then
-  php artisan key:generate --force
-fi
-
-# Only the main API container runs migrations; the scheduler just waits for them.
+# Only the main API container runs migrations; the scheduler and queue worker just reuse the image.
 if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
   echo "Waiting for the database..."
   for i in $(seq 1 30); do
@@ -22,11 +25,20 @@ if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
   php artisan migrate --force
 
   if [ "${SEED_DEMO_DATA:-false}" = "true" ]; then
-    php artisan demo:seed-if-empty
+    if [ "${APP_ENV:-production}" = "production" ]; then
+      echo "Refusing to seed demo accounts (known passwords) in production." >&2
+      exit 1
+    fi
+    php -d memory_limit=512M artisan demo:seed-if-empty
   fi
 fi
 
-php artisan config:clear >/dev/null
-# artisan ran as root above; hand writable dirs back to php-fpm's user.
-chown -R www-data:www-data storage bootstrap/cache
+if [ "${APP_ENV:-production}" = "production" ]; then
+  php artisan config:cache
+  php artisan route:cache
+  php artisan event:cache
+else
+  php artisan config:clear >/dev/null
+fi
+
 exec "$@"

@@ -1,0 +1,202 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend tests (SQLite)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: mbstring, intl, zip, bcmath, pdo_sqlite
+          coverage: none
+      - uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ hashFiles('backend/composer.lock') }}
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: cp .env.example .env && php artisan key:generate
+      - run: php artisan test
+
+  backend-mysql:
+    name: Backend tests (MySQL, real row locks)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: ev_test
+          MYSQL_USER: ev
+          MYSQL_PASSWORD: secret
+          MYSQL_ROOT_PASSWORD: root
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot -proot"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: ev_test
+      DB_USERNAME: ev
+      DB_PASSWORD: secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: mbstring, intl, zip, bcmath, pdo_mysql
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: cp .env.example .env && php artisan key:generate
+      # The job-level DB_* variables take precedence over the sqlite defaults in phpunit.xml,
+      # so the whole suite (including the SELECT ... FOR UPDATE paths) runs against MySQL.
+      - run: php artisan test
+
+  concurrency:
+    name: Booking race conditions (MySQL, parallel workers)
+    runs-on: ubuntu-latest
+    needs: [backend]
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: ev_race
+          MYSQL_USER: ev
+          MYSQL_PASSWORD: secret
+          MYSQL_ROOT_PASSWORD: root
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot -proot"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      APP_ENV: local
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: ev_race
+      DB_USERNAME: ev
+      DB_PASSWORD: secret
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: log
+      BACKEND_PATH: ${{ github.workspace }}/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: mbstring, intl, zip, bcmath, pdo_mysql
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist --no-progress
+        working-directory: backend
+      - run: cp .env.example .env && php artisan key:generate && php artisan migrate --force
+        working-directory: backend
+      - name: Start a multi-worker server
+        working-directory: backend
+        run: |
+          PHP_CLI_SERVER_WORKERS=12 php -S 127.0.0.1:8000 -t public > /tmp/server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/up >/dev/null && break; sleep 1; done
+      - run: |
+          php scripts/concurrency/setup-same-slot.php > /tmp/same-slot.json
+          python3 scripts/concurrency/same_slot.py http://127.0.0.1:8000 /tmp/same-slot.json
+          php scripts/concurrency/setup-same-user.php > /tmp/same-user.json
+          python3 scripts/concurrency/same_user.py http://127.0.0.1:8000 /tmp/same-user.json
+
+  frontend:
+    name: Frontend lint, typecheck, unit tests, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build # generates the route types that tsc needs
+      - run: npm run typecheck
+      - run: npm test
+
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: mbstring, intl, zip, bcmath, pdo_sqlite
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist --no-progress
+        working-directory: backend
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
+
+  docker:
+    name: Production images build
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          target: app
+          push: false
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          target: web
+          push: false
+      - uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: false
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max

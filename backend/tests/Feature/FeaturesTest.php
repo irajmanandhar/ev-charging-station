@@ -227,8 +227,23 @@ class FeaturesTest extends TestCase
     {
         $this->getJson('/api/config')->assertOk()->assertJsonPath('data.payments_enabled', false);
 
+        // env('PAYMENTS_DRIVER=null') yields PHP null: still off, never "enabled".
+        config(['payments.driver' => null]);
+        $this->getJson('/api/config')->assertJsonPath('data.payments_enabled', false)->assertJsonPath('data.payments_provider', null);
+
         config(['payments.driver' => 'khalti']);
         $this->getJson('/api/config')->assertJsonPath('data.payments_enabled', true)->assertJsonPath('data.currency', 'NPR');
+    }
+
+    public function test_set_role_command_promotes_a_user_and_rejects_bad_input(): void
+    {
+        $user = User::factory()->create(['email' => 'first@example.com']);
+
+        $this->artisan('user:set-role', ['email' => 'First@Example.com', 'role' => 'admin'])->assertSuccessful();
+        $this->assertTrue($user->fresh()->isAdmin());
+
+        $this->artisan('user:set-role', ['email' => 'first@example.com', 'role' => 'root'])->assertFailed();
+        $this->artisan('user:set-role', ['email' => 'nobody@example.com', 'role' => 'admin'])->assertFailed();
     }
 
     public function test_csv_cell_neutralises_formula_prefixes(): void
