@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens. Every colour in the UI goes through these, so light/dark is one swap.
+ * Status colours are reserved for charger state and always ship with a text label.
+ */
+:root {
+  color-scheme: light;
+  --page: #f6f7f4;
+  --surface: #ffffff;
+  --surface-2: #f0f2ee;
+  --ink: #0e1512;
+  --ink-2: #4b5450;
+  --muted: #7d857f;
+  --line: #e2e5df;
+  --line-strong: #cfd4cc;
+
+  --brand: #0a7d55;
+  --brand-hover: #086646;
+  --brand-ink: #ffffff;
+  --brand-soft: #e3f3ec;
+
+  --available: #0ca30c;
+  --available-soft: #e6f6e6;
+  --occupied: #d9622f;
+  --occupied-soft: #fcebe3;
+  --reserved: #2a78d6;
+  --reserved-soft: #e5effb;
+  --offline: #898781;
+  --offline-soft: #efeeea;
+  --danger: #c53030;
+  --danger-soft: #fbe9e9;
+
+  /* Charts (validated reference palette, light) */
+  --chart-surface: #ffffff;
+  --chart-series-1: #2a78d6;
+  --chart-grid: #e1e0d9;
+  --chart-axis: #898781;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #0c100e;
+    --surface: #151a17;
+    --surface-2: #1c221f;
+    --ink: #eef1ee;
+    --ink-2: #b9c1bc;
+    --muted: #8a938d;
+    --line: #262d29;
+    --line-strong: #343c37;
+
+    --brand: #2fb684;
+    --brand-hover: #44c794;
+    --brand-ink: #06120d;
+    --brand-soft: #12291f;
+
+    --available: #2fbf2f;
+    --available-soft: #13291a;
+    --occupied: #ec835a;
+    --occupied-soft: #2e1d15;
+    --reserved: #3987e5;
+    --reserved-soft: #14233a;
+    --offline: #898781;
+    --offline-soft: #23231f;
+    --danger: #e66767;
+    --danger-soft: #331a1a;
+
+    --chart-surface: #151a17;
+    --chart-series-1: #3987e5;
+    --chart-grid: #2c2c2a;
+    --chart-axis: #898781;
+  }
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-soft: var(--brand-soft);
+  --color-available: var(--available);
+  --color-available-soft: var(--available-soft);
+  --color-occupied: var(--occupied);
+  --color-occupied-soft: var(--occupied-soft);
+  --color-reserved: var(--reserved);
+  --color-reserved-soft: var(--reserved-soft);
+  --color-offline: var(--offline);
+  --color-offline-soft: var(--offline-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --font-sans: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Leaflet: keep the map under the sticky header and match the theme around tiles */
+.leaflet-container {
+  font-family: inherit;
+  background: var(--surface-2);
+  z-index: 0;
+}
+.leaflet-div-icon.ev-pin {
+  background: transparent;
+  border: none;
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--surface);
+  color: var(--ink);
+}
