@@ -223,6 +223,14 @@ class FeaturesTest extends TestCase
         $this->actingAs($operator)->getJson('/api/operator/export/bookings?from=2026-10-05&to=2026-10-02')->assertStatus(422);
     }
 
+    public function test_public_config_reflects_the_payment_driver(): void
+    {
+        $this->getJson('/api/config')->assertOk()->assertJsonPath('data.payments_enabled', false);
+
+        config(['payments.driver' => 'khalti']);
+        $this->getJson('/api/config')->assertJsonPath('data.payments_enabled', true)->assertJsonPath('data.currency', 'NPR');
+    }
+
     public function test_csv_cell_neutralises_formula_prefixes(): void
     {
         foreach (['=1+1', '+1', '-1', '@x'] as $bad) {

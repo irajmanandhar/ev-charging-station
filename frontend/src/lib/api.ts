@@ -83,5 +83,26 @@ export async function api<T>(
   return { data: json.data, message: json.message };
 }
 
+/** Authenticated file download (the bearer token can't ride on a plain link). */
+export async function downloadCsv(path: string): Promise<Blob> {
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api${path}`, { headers: { Accept: "text/csv", ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+  } catch {
+    throw new ApiError("Can't reach the server. Is the API running?", 0);
+  }
+  if (!res.ok) {
+    let message = `Download failed (${res.status})`;
+    try {
+      message = ((await res.json()) as { message?: string }).message ?? message;
+    } catch {
+      /* not JSON */
+    }
+    throw new ApiError(message, res.status);
+  }
+  return res.blob();
+}
+
 /** SWR fetcher: key is the API path. */
 export const fetcher = <T,>(path: string) => api<T>(path).then((r) => r.data);

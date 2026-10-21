@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
+import { LanguageSwitcher, useT } from "@/lib/i18n";
 import { ButtonLink, cx } from "./ui";
 
 function Logo() {
@@ -26,12 +27,13 @@ export function SiteHeader() {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const t = useT();
 
   const links = [
-    { href: "/", label: "Find a charger", show: true },
-    { href: "/bookings", label: "My bookings", show: !!user },
-    { href: "/operator", label: "Operator", show: user?.role === "operator" || user?.role === "admin" },
-    { href: "/admin", label: "Admin", show: user?.role === "admin" },
+    { href: "/", label: t("nav.find"), show: true },
+    { href: "/bookings", label: t("nav.bookings"), show: !!user },
+    { href: "/operator", label: t("nav.operator"), show: user?.role === "operator" || user?.role === "admin" },
+    { href: "/admin", label: t("nav.admin"), show: user?.role === "admin" },
   ].filter((l) => l.show);
 
   const isActive = (href: string) => (href === "/" ? pathname === "/" || pathname.startsWith("/stations") : pathname.startsWith(href));
@@ -55,6 +57,7 @@ export function SiteHeader() {
           ))}
         </nav>
         <div className="ml-auto hidden items-center gap-3 md:flex">
+          <LanguageSwitcher />
           {loading ? null : user ? (
             <>
               <span className="text-sm text-ink-2">
@@ -68,15 +71,15 @@ export function SiteHeader() {
                 }}
                 className="rounded-lg px-3 py-2 text-sm font-medium text-ink-2 hover:bg-surface-2 hover:text-ink"
               >
-                Sign out
+                {t("auth.signOut")}
               </button>
             </>
           ) : (
             <>
               <ButtonLink href="/login" variant="ghost">
-                Sign in
+                {t("auth.signIn")}
               </ButtonLink>
-              <ButtonLink href="/register">Create account</ButtonLink>
+              <ButtonLink href="/register">{t("auth.createAccount")}</ButtonLink>
             </>
           )}
         </div>
@@ -105,6 +108,9 @@ export function SiteHeader() {
               </Link>
             ))}
             <div className="mt-2 border-t border-line pt-3">
+              <div className="mb-2 px-3">
+                <LanguageSwitcher />
+              </div>
               {user ? (
                 <button
                   onClick={async () => {
@@ -114,15 +120,15 @@ export function SiteHeader() {
                   }}
                   className="w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium text-ink-2"
                 >
-                  Sign out ({user.name})
+                  {t("auth.signOut")} ({user.name})
                 </button>
               ) : (
                 <div className="flex gap-2">
                   <ButtonLink href="/login" variant="secondary" className="flex-1" onClick={() => setOpen(false)}>
-                    Sign in
+                    {t("auth.signIn")}
                   </ButtonLink>
                   <ButtonLink href="/register" className="flex-1" onClick={() => setOpen(false)}>
-                    Create account
+                    {t("auth.createAccount")}
                   </ButtonLink>
                 </div>
               )}

@@ -1,26 +1,81 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { useToast } from "@/components/toast";
 import { useNow } from "@/components/use-now";
 import { Alert, BookingStatusBadge, Button, ButtonLink, Card, Empty, PageHeader, Skeleton, StatTile } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import { date, duration, kwh, money, time } from "@/lib/format";
-import type { Booking, Session } from "@/lib/types";
+import { useT } from "@/lib/i18n";
+import type { AppConfig, Booking, Session } from "@/lib/types";
 
 const CHECKIN_EARLY_MIN = 10;
 const GRACE_MIN = 15;
 const EFFICIENCY = 0.85;
 
+const PENDING_PAYMENT = "ev.pending-payment";
+
+/** Send the browser to the payment provider: a plain redirect, or a form POST (eSewa). */
+function goToProvider(redirectUrl: string, form: Record<string, string> | null) {
+  if (!form) {
+    window.location.assign(redirectUrl);
+    return;
+  }
+  const el = document.createElement("form");
+  el.method = "POST";
+  el.action = redirectUrl;
+  for (const [name, value] of Object.entries(form)) {
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = name;
+    input.value = value;
+    el.appendChild(input);
+  }
+  document.body.appendChild(el);
+  el.submit();
+}
+
 export function MyBookings() {
+  const t = useT();
+  const toast = useToast();
   const { data: bookings, error, mutate } = useSWR<Booking[]>("/bookings", { refreshInterval: 30_000 });
   const { data: sessions, mutate: mutateSessions } = useSWR<Session[]>("/sessions");
+  const { data: config } = useSWR<AppConfig>("/config");
   const refresh = () => {
     mutate();
     mutateSessions();
   };
+
+  // Coming back from the payment provider: ask the API to verify the payment it started.
+  const confirming = useRef(false);
+  useEffect(() => {
+    let id: string | null = null;
+    try {
+      id = window.sessionStorage.getItem(PENDING_PAYMENT);
+    } catch {
+      /* storage unavailable */
+    }
+    if (!id || confirming.current) return;
+    confirming.current = true;
+    try {
+      window.sessionStorage.removeItem(PENDING_PAYMENT);
+    } catch {
+      /* storage unavailable */
+    }
+    const params = new URLSearchParams(window.location.search);
+    api<{ status: string }>(`/payments/${id}/confirm`, {
+      method: "POST",
+      body: { pidx: params.get("pidx") ?? undefined, data: params.get("data") ?? undefined, status: params.get("status") ?? undefined },
+    })
+      .then(({ data, message }) => {
+        toast(message, data.status === "completed" ? "success" : "error");
+        mutate();
+      })
+      .catch((e) => toast(e instanceof ApiError ? e.message : "Couldn't confirm the payment.", "error"));
+    window.history.replaceState(null, "", window.location.pathname);
+  }, [mutate, toast]);
 
   if (error) {
     return (
@@ -38,15 +93,15 @@ export function MyBookings() {
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6">
       <PageHeader
-        title="My bookings"
-        subtitle="Upcoming reservations, live charging and your history."
-        actions={<ButtonLink href="/">Book a charger</ButtonLink>}
+        title={t("bookings.title")}
+        subtitle={t("bookings.subtitle")}
+        actions={<ButtonLink href="/">{t("bookings.book")}</ButtonLink>}
       />
 
       <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatTile label="Sessions" value={completed.length} />
-        <StatTile label="Energy charged" value={kwh(completed.reduce((n, s) => n + s.energy_kwh, 0), 0)} />
-        <StatTile label="Total spent" value={money(completed.reduce((n, s) => n + s.cost, 0))} />
+        <StatTile label={t("bookings.sessions")} value={completed.length} />
+        <StatTile label={t("bookings.energy")} value={kwh(completed.reduce((n, s) => n + s.energy_kwh, 0), 0)} />
+        <StatTile label={t("bookings.spent")} value={money(completed.reduce((n, s) => n + s.cost, 0))} />
       </div>
 
       {!bookings ? (
@@ -58,7 +113,7 @@ export function MyBookings() {
         <div className="space-y-10">
           {active.length > 0 && (
             <section>
-              <h2 className="mb-3 text-lg font-semibold">Charging now</h2>
+              <h2 className="mb-3 text-lg font-semibold">{t("bookings.chargingNow")}</h2>
               <div className="space-y-3">
                 {active.map((b) => (
                   <ActiveSession key={b.id} booking={b} onChange={refresh} />
@@ -68,7 +123,7 @@ export function MyBookings() {
           )}
 
           <section>
-            <h2 className="mb-3 text-lg font-semibold">Upcoming</h2>
+            <h2 className="mb-3 text-lg font-semibold">{t("bookings.upcoming")}</h2>
             {upcoming.length === 0 ? (
               <Empty title="No upcoming bookings" action={<ButtonLink href="/" variant="secondary">Find a charger</ButtonLink>}>
                 Reserve a slot up to 7 days ahead so a charger is waiting when you arrive.
@@ -76,14 +131,14 @@ export function MyBookings() {
             ) : (
               <div className="space-y-3">
                 {upcoming.map((b) => (
-                  <UpcomingBooking key={b.id} booking={b} onChange={refresh} />
+                  <UpcomingBooking key={b.id} booking={b} onChange={refresh} payments={!!config?.payments_enabled} />
                 ))}
               </div>
             )}
           </section>
 
           <section>
-            <h2 className="mb-3 text-lg font-semibold">History</h2>
+            <h2 className="mb-3 text-lg font-semibold">{t("bookings.history")}</h2>
             {past.length === 0 ? (
               <p className="text-sm text-ink-2">Completed and cancelled bookings will show up here.</p>
             ) : (
@@ -150,10 +205,11 @@ function BookingSummary({ booking: b }: { booking: Booking }) {
   );
 }
 
-function UpcomingBooking({ booking: b, onChange }: { booking: Booking; onChange: () => void }) {
+function UpcomingBooking({ booking: b, onChange, payments }: { booking: Booking; onChange: () => void; payments: boolean }) {
+  const t = useT();
   const now = useNow(15_000);
   const toast = useToast();
-  const [busy, setBusy] = useState<"checkin" | "cancel" | null>(null);
+  const [busy, setBusy] = useState<"checkin" | "cancel" | "pay" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const start = new Date(b.starts_at).getTime();
@@ -178,6 +234,23 @@ function UpcomingBooking({ booking: b, onChange }: { booking: Booking; onChange:
     }
   };
 
+  const pay = async () => {
+    setBusy("pay");
+    setError(null);
+    try {
+      const { data } = await api<{ payment_id: number; redirect_url: string; form: Record<string, string> | null }>(`/bookings/${b.id}/pay`, { method: "POST" });
+      try {
+        window.sessionStorage.setItem(PENDING_PAYMENT, String(data.payment_id));
+      } catch {
+        /* storage unavailable: the payment can still be confirmed from the next visit */
+      }
+      goToProvider(data.redirect_url, data.form);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Something went wrong.");
+      setBusy(null);
+    }
+  };
+
   return (
     <Card className="p-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -189,11 +262,17 @@ function UpcomingBooking({ booking: b, onChange }: { booking: Booking; onChange:
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3">
         <Button onClick={() => act("checkin")} loading={busy === "checkin"} disabled={!canCheckIn || busy !== null}>
-          Check in &amp; start
+          {t("bookings.checkIn")}
         </Button>
+        {payments && !b.paid && (
+          <Button variant="secondary" onClick={pay} loading={busy === "pay"} disabled={busy !== null}>
+            {t("bookings.pay")}
+          </Button>
+        )}
+        {b.paid && <span className="rounded bg-available-soft px-2 py-1 text-xs font-medium">{t("bookings.paid")}</span>}
         {canCancel && (
           <Button variant="ghost" onClick={() => act("cancel")} loading={busy === "cancel"} disabled={busy !== null}>
-            Cancel booking
+            {t("bookings.cancel")}
           </Button>
         )}
         <span className="text-sm text-ink-2">
@@ -214,6 +293,7 @@ function UpcomingBooking({ booking: b, onChange }: { booking: Booking; onChange:
 }
 
 function ActiveSession({ booking: b, onChange }: { booking: Booking; onChange: () => void }) {
+  const t = useT();
   const now = useNow(1000);
   const toast = useToast();
   const [stopping, setStopping] = useState(false);
@@ -265,7 +345,7 @@ function ActiveSession({ booking: b, onChange }: { booking: Booking; onChange: (
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm text-ink-2">{remaining > 0 ? `${duration(remaining)} left in your slot` : "Slot ending…"}</span>
         <Button variant="danger" onClick={stop} loading={stopping}>
-          Stop charging
+          {t("bookings.stop")}
         </Button>
       </div>
       {error && (

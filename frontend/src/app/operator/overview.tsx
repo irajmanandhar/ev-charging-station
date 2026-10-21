@@ -5,11 +5,15 @@ import useSWR from "swr";
 import { LiveStrip, MetricsDashboard, RangePicker } from "@/components/metrics-dashboard";
 import { useToast } from "@/components/toast";
 import { Alert, BookingStatusBadge, Button, ButtonLink, Card, Empty, PageHeader, Select, Skeleton } from "@/components/ui";
-import { ApiError, api } from "@/lib/api";
+import { ApiError, api, downloadCsv } from "@/lib/api";
 import { addDays, date, time, ymd } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import type { Booking, Metrics, Station } from "@/lib/types";
 
 export function OperatorOverview() {
+  const t = useT();
+  const toast = useToast();
+  const [exporting, setExporting] = useState(false);
   const [days, setDays] = useState(30);
   const [stationId, setStationId] = useState("");
   const { data: stations } = useSWR<Station[]>("/operator/stations");
@@ -17,6 +21,25 @@ export function OperatorOverview() {
     `/operator/metrics?days=${days}${stationId ? `&station_id=${stationId}` : ""}`,
     { refreshInterval: 60_000, keepPreviousData: true },
   );
+
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const to = ymd(new Date());
+      const from = addDays(to, -(days - 1));
+      const blob = await downloadCsv(`/operator/export/bookings?from=${from}&to=${to}${stationId ? `&station_id=${stationId}` : ""}`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `bookings-${from}-to-${to}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "Couldn't export.", "error");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (stations && stations.length === 0) {
     return (
@@ -45,6 +68,9 @@ export function OperatorOverview() {
               ))}
             </Select>
             <RangePicker value={days} onChange={setDays} />
+            <Button variant="secondary" onClick={exportCsv} loading={exporting}>
+              {t("operator.export")}
+            </Button>
           </>
         }
       />

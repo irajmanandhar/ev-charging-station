@@ -8,6 +8,7 @@ use App\Http\Controllers\API\Auth\RegisterController;
 use App\Http\Controllers\API\Auth\SocialAuthController;
 use App\Http\Controllers\API\BookingController;
 use App\Http\Controllers\API\ChargerController;
+use App\Http\Controllers\API\ConfigController;
 use App\Http\Controllers\API\Operator;
 use App\Http\Controllers\API\PaymentController;
 use App\Http\Controllers\API\SessionController;
@@ -41,6 +42,7 @@ Route::get('/auth/{provider}/callback', [SocialAuthController::class, 'handlePro
 |--------------------------------------------------------------------------
 */
 Route::middleware('throttle:public')->group(function () {
+    Route::get('/config', [ConfigController::class, 'show']);
     Route::get('/stations', [StationController::class, 'index']);
     Route::get('/stations/{station}', [StationController::class, 'show']);
     Route::get('/chargers/{charger}/availability', [ChargerController::class, 'availability']);
