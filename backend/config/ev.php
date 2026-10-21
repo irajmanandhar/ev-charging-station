@@ -16,6 +16,23 @@ return [
     'charge_efficiency' => 0.85,
     'max_session_kwh' => 80,
 
+    // Cancelling less than this many minutes before the start keeps a fee (percent of the estimated cost)
+    'cancellation_free_minutes' => 60,
+    'cancellation_fee_percent' => 20,
+
+    // Email a reminder this many minutes before a confirmed booking starts
+    'reminder_minutes_before' => 30,
+
+    // Used for operator/admin dashboards, which span stations
+    'default_timezone' => 'Asia/Kathmandu',
+
+    // One-time codes (sign-up, password reset)
+    'otp_ttl_minutes' => 10,
+    'otp_max_attempts' => 5,
+
+    // Operator CSV export: longest range in days
+    'export_max_days' => 93,
+
     'currency' => 'NPR',
 
     // Only ever honoured in local/testing environments; lets you finish sign-up without a mail server.

@@ -23,11 +23,17 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col font-sans">
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[2000] focus:rounded-lg focus:bg-brand focus:px-4 focus:py-2 focus:text-brand-ink"
+        >
+          Skip to content
+        </a>
         <Providers>
           <Suspense fallback={<div className="sticky top-0 z-50 h-16 border-b border-line bg-surface" />}>
             <SiteHeader />
           </Suspense>
-          <main className="flex flex-1 flex-col">{children}</main>
+          <main id="main" className="flex flex-1 flex-col">{children}</main>
         </Providers>
       </body>
     </html>

@@ -2,6 +2,8 @@
 
 use App\Exceptions\DomainRuleException;
 use App\Http\Middleware\EnsureRole;
+use App\Http\Middleware\SecurityHeaders;
+use App\Support\ErrorCode;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -14,9 +16,10 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
-$error = fn (string $message, int $status, array $errors = []) => response()->json([
+$error = fn (string $message, int $status, array $errors = [], ?string $code = null) => response()->json([
     'success' => false,
     'message' => $message,
+    'code' => $code ?? ErrorCode::forStatus($status),
     'errors' => (object) $errors,
 ], $status);
 
@@ -28,7 +31,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Behind the TLS proxy, request()->ip() and isSecure() must come from its X-Forwarded-* headers,
+        // otherwise every user shares one rate-limit bucket and HSTS is never sent.
+        if ($proxies = env('TRUSTED_PROXIES')) {
+            $middleware->trustProxies(at: $proxies === '*' ? '*' : array_map('trim', explode(',', $proxies)));
+        }
         $middleware->alias(['role' => EnsureRole::class]);
+        $middleware->append(SecurityHeaders::class);
     })
     ->withExceptions(function (Exceptions $exceptions) use ($error): void {
         // Business-rule outcomes (slot taken, closed, ...) are expected, not errors.
@@ -37,7 +46,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $isApi = fn (Request $request) => $request->is('api/*') || $request->expectsJson();
 
         $exceptions->render(function (DomainRuleException $e, Request $request) use ($error) {
-            return $error($e->getMessage(), $e->status, ['code' => $e->errorCode]);
+            return $error($e->getMessage(), $e->status, ['code' => $e->errorCode], $e->errorCode);
         });
 
         $exceptions->render(function (ValidationException $e, Request $request) use ($error, $isApi) {

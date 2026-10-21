@@ -15,8 +15,12 @@ class UserOtp extends Model
         'otp',
         'type',
         'expires_at',
-        'is_used'
+        'is_used',
+        'attempts',
     ];
+
+    /** The plain code, only available on the instance returned by generateOtp(). */
+    public ?string $plain = null;
 
     protected $casts = [
         'expires_at' => 'datetime',
@@ -33,7 +37,7 @@ class UserOtp extends Model
     public static function devPayload(self $otp, array $base = []): ?array
     {
         if (config('ev.expose_otp') && app()->environment('local', 'testing')) {
-            $base['dev_otp'] = $otp->otp;
+            $base['dev_otp'] = $otp->plain;
         }
 
         return $base ?: null;
@@ -41,6 +45,14 @@ class UserOtp extends Model
 
     public static function generateOtp($email, $type = 'email_verification')
     {
+        // Wrong guesses carry over to the replacement code, so asking for a new code
+        // can't be used to get a fresh set of guesses.
+        $carried = (int) self::where('email', $email)
+            ->where('type', $type)
+            ->where('is_used', false)
+            ->where('expires_at', '>', now())
+            ->max('attempts');
+
         self::where('email', $email)
             ->where('type', $type)
             ->where('is_used', false)
@@ -50,11 +62,14 @@ class UserOtp extends Model
 
         $otpRecord = self::create([
             'email' => $email,
-            'otp' => $otp,
+            'otp' => self::digest($email, $type, $otp),
             'type' => $type,
-            'expires_at' => now()->addMinutes(10),
-            'is_used' => false
+            'expires_at' => now()->addMinutes((int) config('ev.otp_ttl_minutes')),
+            'is_used' => false,
+            'attempts' => $carried,
         ]);
+
+        $otpRecord->plain = $otp;
 
         self::sendOtpNotification($email, $otp, $type);
 
@@ -86,38 +101,40 @@ class UserOtp extends Model
         }
     }
 
-    /**
-     * Verify OTP
-     */
-    public static function verifyOtp($email, $otp, $type = 'email_verification', $markUsed = true)
+    /** Codes are stored keyed-hashed, so a database leak doesn't expose live codes. */
+    private static function digest(string $email, string $type, string $otp): string
     {
-        $otpRecord = self::where('email', $email)
-            ->where('otp', $otp)
-            ->where('type', $type)
-            ->where('is_used', false)
-            ->where('expires_at', '>', now())
-            ->first();
-
-        if ($otpRecord) {
-            if ($markUsed) {
-                // Mark OTP as use
-                $otpRecord->update(['is_used' => true]);
-            }
-            return true;
-        }
-        return false;
+        return hash_hmac('sha256', "{$email}|{$type}|{$otp}", (string) config('app.key'));
     }
 
     /**
-     * Validate OTP only (without applying it)
+     * Verify OTP. Wrong guesses are counted per code; after MAX_ATTEMPTS the code is dead.
      */
-    public static function isValidOtp($email, $otp, $type = 'email_verification')
+    public static function verifyOtp($email, $otp, $type = 'email_verification', $markUsed = true)
     {
-        return self::where('email', $email)
-            ->where('otp', $otp)
+        $record = self::where('email', $email)
             ->where('type', $type)
             ->where('is_used', false)
             ->where('expires_at', '>', now())
-            ->exists();
+            ->latest('id')
+            ->first();
+
+        $max = (int) config('ev.otp_max_attempts');
+        if (! $record || $record->attempts >= $max) {
+            return false;
+        }
+
+        if (! hash_equals($record->otp, self::digest($email, $type, (string) $otp))) {
+            // Atomic: parallel guesses can't squeeze past the limit.
+            self::whereKey($record->id)->where('attempts', '<', $max)->increment('attempts');
+
+            return false;
+        }
+
+        if ($markUsed) {
+            $record->update(['is_used' => true]);
+        }
+
+        return true;
     }
 }

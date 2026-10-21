@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
+import { useT } from "@/lib/i18n";
 import type { LatLng } from "@/components/station-map";
 import { Alert, Button, Card, Empty, Input, Select, Skeleton, cx } from "@/components/ui";
 import { CONNECTOR_LABEL, hours, money } from "@/lib/format";
@@ -26,6 +27,7 @@ function useDebounced<T>(value: T, ms = 300): T {
 }
 
 export function StationFinder() {
+  const t = useT();
   const [you, setYou] = useState<LatLng | null>(null);
   const [locating, setLocating] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
@@ -83,13 +85,13 @@ export function StationFinder() {
       {/* Left: filters + results */}
       <section className="flex w-full flex-col border-line lg:w-[440px] lg:shrink-0 lg:border-r">
         <div className="border-b border-line bg-surface px-4 py-5 sm:px-6">
-          <h1 className="text-2xl font-semibold tracking-tight">Find a charger</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("finder.title")}</h1>
           <p className="mt-1 text-sm text-ink-2">Live availability across the valley. Book a slot or plug in on arrival.</p>
 
           <div className="mt-4 flex gap-2">
             <Input
               type="search"
-              placeholder="Search by name, area or city"
+              placeholder={t("finder.search")}
               value={q}
               onChange={(e) => setQ(e.target.value)}
               aria-label="Search stations"

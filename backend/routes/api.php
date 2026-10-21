@@ -8,7 +8,9 @@ use App\Http\Controllers\API\Auth\RegisterController;
 use App\Http\Controllers\API\Auth\SocialAuthController;
 use App\Http\Controllers\API\BookingController;
 use App\Http\Controllers\API\ChargerController;
+use App\Http\Controllers\API\ConfigController;
 use App\Http\Controllers\API\Operator;
+use App\Http\Controllers\API\PaymentController;
 use App\Http\Controllers\API\SessionController;
 use App\Http\Controllers\API\StationController;
 use Illuminate\Support\Facades\Route;
@@ -18,7 +20,7 @@ use Illuminate\Support\Facades\Route;
 | Auth
 |--------------------------------------------------------------------------
 */
-Route::middleware('throttle:10,1')->group(function () {
+Route::middleware('throttle:auth')->group(function () {
     Route::post('/register', [RegisterController::class, 'register']);
     Route::post('/verify-email-otp', [EmailVerificationController::class, 'verifyEmail']);
     Route::post('/resend-otp', [EmailVerificationController::class, 'resendOtp']);
@@ -31,18 +33,23 @@ Route::middleware('throttle:10,1')->group(function () {
     });
 });
 
-Route::get('/auth/{provider}/redirect', [SocialAuthController::class, 'redirectToProvider']);
-Route::get('/auth/{provider}/callback', [SocialAuthController::class, 'handleProviderCallback']);
+Route::middleware('throttle:public')->group(function () {
+    Route::get('/auth/{provider}/redirect', [SocialAuthController::class, 'redirectToProvider']);
+    Route::get('/auth/{provider}/callback', [SocialAuthController::class, 'handleProviderCallback']);
+});
 
 /*
 |--------------------------------------------------------------------------
 | Public: station finder
 |--------------------------------------------------------------------------
 */
-Route::get('/stations', [StationController::class, 'index']);
-Route::get('/stations/{station}', [StationController::class, 'show']);
-Route::get('/chargers/{charger}/availability', [ChargerController::class, 'availability']);
-Route::get('/chargers/{charger}/quote', [ChargerController::class, 'quote']);
+Route::middleware('throttle:public')->group(function () {
+    Route::get('/config', [ConfigController::class, 'show']);
+    Route::get('/stations', [StationController::class, 'index']);
+    Route::get('/stations/{station}', [StationController::class, 'show']);
+    Route::get('/chargers/{charger}/availability', [ChargerController::class, 'availability']);
+    Route::get('/chargers/{charger}/quote', [ChargerController::class, 'quote']);
+});
 
 /*
 |--------------------------------------------------------------------------
@@ -54,12 +61,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [LoginController::class, 'logout']);
 
     Route::get('/bookings', [BookingController::class, 'index']);
-    Route::post('/bookings', [BookingController::class, 'store'])->middleware('throttle:20,1');
+    Route::post('/bookings', [BookingController::class, 'store'])->middleware('throttle:booking');
     Route::get('/bookings/{booking}', [BookingController::class, 'show']);
-    Route::post('/bookings/{booking}/cancel', [BookingController::class, 'cancel']);
-    Route::post('/bookings/{booking}/check-in', [BookingController::class, 'checkIn']);
+    Route::post('/bookings/{booking}/cancel', [BookingController::class, 'cancel'])->middleware('throttle:booking');
+    Route::post('/bookings/{booking}/check-in', [BookingController::class, 'checkIn'])->middleware('throttle:booking');
 
-    Route::post('/chargers/{charger}/start', [ChargerController::class, 'startNow'])->middleware('throttle:20,1');
+    Route::post('/chargers/{charger}/start', [ChargerController::class, 'startNow'])->middleware('throttle:booking');
+
+    Route::post('/bookings/{booking}/pay', [PaymentController::class, 'start'])->middleware('throttle:booking');
+    Route::post('/payments/{payment}/confirm', [PaymentController::class, 'confirm'])->middleware('throttle:booking');
 
     Route::get('/sessions', [SessionController::class, 'index']);
     Route::post('/sessions/{session}/stop', [SessionController::class, 'stop']);
@@ -70,6 +80,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:operator,admin')->prefix('operator')->group(function () {
         Route::get('/metrics', [Operator\MetricsController::class, 'index']);
         Route::get('/bookings', [Operator\BookingController::class, 'index']);
+        Route::get('/export/bookings', [Operator\ExportController::class, 'bookings'])->middleware('throttle:10,1');
 
         Route::get('/stations', [Operator\StationController::class, 'index']);
         Route::post('/stations', [Operator\StationController::class, 'store']);

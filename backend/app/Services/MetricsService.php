@@ -23,8 +23,9 @@ class MetricsService
      *
      * @param  Collection<int, Station>  $stations
      */
-    public function forStations(Collection $stations, Carbon $from, Carbon $to, string $tz = 'Asia/Kathmandu'): array
+    public function forStations(Collection $stations, Carbon $from, Carbon $to, ?string $tz = null): array
     {
+        $tz ??= config('ev.default_timezone');
         $stationIds = $stations->pluck('id')->all();
         $chargerIds = Charger::query()->whereIn('station_id', $stationIds)->pluck('id')->all();
 

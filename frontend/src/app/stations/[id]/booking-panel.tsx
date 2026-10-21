@@ -125,6 +125,7 @@ export function BookingPanel({
                 {days.map((d, i) => (
                   <button
                     key={d}
+                    aria-pressed={d === day}
                     onClick={() => {
                       setDay(d);
                       setStart(null);
@@ -171,6 +172,7 @@ export function BookingPanel({
                   options.map((d) => (
                     <button
                       key={d}
+                      aria-pressed={d === chosen}
                       onClick={() => setMinutes(d)}
                       className={cx(
                         "rounded-lg border px-3 py-1.5 text-sm",

@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
@@ -25,6 +26,8 @@ class Booking extends Model
         'estimated_kwh',
         'estimated_cost',
         'cancelled_at',
+        'reminder_sent_at',
+        'cancellation_fee',
     ];
 
     protected function casts(): array
@@ -33,6 +36,8 @@ class Booking extends Model
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
             'cancelled_at' => 'datetime',
+            'reminder_sent_at' => 'datetime',
+            'cancellation_fee' => 'float',
             'estimated_kwh' => 'float',
             'estimated_cost' => 'float',
             'status' => BookingStatus::class,
@@ -54,6 +59,11 @@ class Booking extends Model
     public function charger(): BelongsTo
     {
         return $this->belongsTo(Charger::class);
+    }
+
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class);
     }
 
     public function chargingSession(): HasOne

@@ -17,6 +17,7 @@ class EnsureRole
             return response()->json([
                 'success' => false,
                 'message' => 'You do not have access to this area.',
+                'code' => 'forbidden',
                 'errors' => (object) [],
             ], 403);
         }

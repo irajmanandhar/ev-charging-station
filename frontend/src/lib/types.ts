@@ -74,6 +74,14 @@ export interface Session {
   user?: { id: number; name: string };
 }
 
+export interface AppConfig {
+  payments_enabled: boolean;
+  payments_provider: string;
+  currency: string;
+  cancellation_free_minutes: number;
+  cancellation_fee_percent: number;
+}
+
 export interface Booking {
   id: number;
   reference: string;
@@ -85,6 +93,8 @@ export interface Booking {
   estimated_kwh: number;
   estimated_cost: number;
   cancelled_at: string | null;
+  cancellation_fee?: number;
+  paid?: boolean;
   created_at: string;
   user?: { id: number; name: string; email: string };
   charger?: {

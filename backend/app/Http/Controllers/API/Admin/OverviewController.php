@@ -19,7 +19,7 @@ class OverviewController extends BaseController
 
     public function index(Request $request): JsonResponse
     {
-        $tz = 'Asia/Kathmandu';
+        $tz = config('ev.default_timezone');
         $data = $request->validate(['days' => ['nullable', 'integer', 'in:7,30,90']]);
         $days = (int) ($data['days'] ?? 30);
 

@@ -7,17 +7,23 @@ import { CircleMarker, MapContainer, Marker, Popup, TileLayer, useMap } from "re
 import Link from "next/link";
 import type { Station } from "@/lib/types";
 import { money } from "@/lib/format";
+import { TILE_ATTRIBUTION, TILE_URL } from "@/lib/map-config";
 
 export type LatLng = { lat: number; lng: number };
 
 const KATHMANDU: LatLng = { lat: 27.7072, lng: 85.324 };
 
+const iconCache = new Map<string, L.DivIcon>();
+
 function pinIcon(station: Station, selected: boolean): L.DivIcon {
   const available = station.summary?.available ?? 0;
   const color = station.status !== "active" ? "var(--offline)" : available > 0 ? "var(--available)" : "var(--occupied)";
+  const key = `${color}|${available}|${selected}`;
+  const cached = iconCache.get(key);
+  if (cached) return cached;
   const size = selected ? 40 : 32;
   // Count inside the pin so state doesn't rely on colour alone.
-  return L.divIcon({
+  const icon = L.divIcon({
     className: "ev-pin",
     iconSize: [size, size],
     iconAnchor: [size / 2, size],
@@ -26,6 +32,8 @@ function pinIcon(station: Station, selected: boolean): L.DivIcon {
       <span style="transform:rotate(45deg);color:#fff;font:600 ${selected ? 14 : 12}px system-ui">${available}</span>
     </div>`,
   });
+  iconCache.set(key, icon);
+  return icon;
 }
 
 function FitTo({ points, center }: { points: LatLng[]; center?: LatLng | null }) {
@@ -74,10 +82,7 @@ export default function StationMap({
       className={className}
       style={{ height: "100%", width: "100%" }}
     >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
+      <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />
       <FitTo points={points} center={start} />
       {you && (
         <CircleMarker

@@ -20,6 +20,11 @@ class LoginController extends BaseController
 
         $user = User::where('email', strtolower($data['email']))->first();
 
+        // Always run a hash check so response time doesn't reveal which emails exist.
+        if (! $user) {
+            Hash::make($data['password']);
+        }
+
         if (! $user || ! Hash::check($data['password'], $user->password)) {
             return $this->sendError('Incorrect email or password.', 401);
         }

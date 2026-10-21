@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { RequireAuth } from "@/components/require-auth";
 import { SubNav } from "@/components/sub-nav";
 
-export const metadata: Metadata = { title: "Admin" };
+export const metadata: Metadata = { title: "Admin" , robots: { index: false } };
 
 export default function AdminLayout({ children }: LayoutProps<"/admin">) {
   return (

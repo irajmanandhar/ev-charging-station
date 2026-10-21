@@ -11,6 +11,7 @@ use App\Models\Charger;
 use App\Services\BookingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class BookingController extends BaseController
 {
@@ -21,21 +22,31 @@ class BookingController extends BaseController
     /** Query: scope=upcoming|past|all (default all) */
     public function index(Request $request): JsonResponse
     {
-        $scope = $request->input('scope', 'all');
+        $data = $request->validate([
+            'scope' => ['nullable', 'in:upcoming,past,all'],
+            'status' => ['nullable', Rule::enum(BookingStatus::class)],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:50'],
+        ]);
+        $scope = $data['scope'] ?? 'all';
 
-        $bookings = $request->user()->bookings()
-            ->with(['charger.station', 'chargingSession'])
+        $query = $request->user()->bookings()
+            ->with(['charger.station', 'chargingSession', 'payments'])
+            ->when($data['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
             ->when($scope === 'upcoming', fn ($q) => $q
                 ->whereIn('status', BookingStatus::blocking())
                 ->orderBy('starts_at'))
             ->when($scope === 'past', fn ($q) => $q
                 ->whereNotIn('status', BookingStatus::blocking())
                 ->orderByDesc('starts_at'))
-            ->when($scope === 'all', fn ($q) => $q->orderByDesc('starts_at'))
-            ->limit(100)
-            ->get();
+            ->when($scope === 'all', fn ($q) => $q->orderByDesc('starts_at'));
 
-        return $this->sendResponse(BookingResource::collection($bookings));
+        // Without ?page the first 100 come back as before; with it, a paginated list plus meta.
+        if (isset($data['page'])) {
+            return $this->sendPage($query->paginate($data['per_page'] ?? 20), BookingResource::class);
+        }
+
+        return $this->sendResponse(BookingResource::collection($query->limit(100)->get()));
     }
 
     public function store(StoreBookingRequest $request): JsonResponse
@@ -66,7 +77,7 @@ class BookingController extends BaseController
     {
         $this->authorize('act', $booking);
 
-        $this->bookings->cancel($booking);
+        $booking = $this->bookings->cancel($booking);
 
         return $this->sendResponse(new BookingResource($booking->load('charger.station')), 'Booking cancelled.');
     }

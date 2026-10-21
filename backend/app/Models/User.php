@@ -70,6 +70,6 @@ class User extends Authenticatable implements MustVerifyEmail
     public function sendEmailVerificationNotification(): void
     {
         $otpRecord = UserOtp::generateOtp($this->email, 'email_verification');
-        $this->notify(new EmailVerificationOtp($otpRecord->otp));
+        $this->notify(new EmailVerificationOtp($otpRecord->plain));
     }
 }

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { RequireAuth } from "@/components/require-auth";
 import { SubNav } from "@/components/sub-nav";
 
-export const metadata: Metadata = { title: "Operator" };
+export const metadata: Metadata = { title: "Operator", robots: { index: false } };
 
 export default function OperatorLayout({ children }: LayoutProps<"/operator">) {
   return (

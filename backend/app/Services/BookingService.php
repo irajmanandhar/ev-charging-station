@@ -11,13 +11,19 @@ use App\Models\Booking;
 use App\Models\Charger;
 use App\Models\ChargingSession;
 use App\Models\User;
+use App\Notifications\BookingCancelled;
+use App\Notifications\BookingConfirmed;
+use App\Notifications\BookingNoShow;
+use App\Notifications\BookingReminder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class BookingService
 {
-    public function __construct(private readonly PricingService $pricing)
-    {
+    public function __construct(
+        private readonly PricingService $pricing,
+        private readonly PaymentService $payments,
+    ) {
     }
 
     /**
@@ -35,6 +41,10 @@ class BookingService
         $this->assertValidWindow($start, $end);
 
         return DB::transaction(function () use ($user, $charger, $start, $end, $vehicle) {
+            // Lock order is always user, then charger. Serialises one driver's concurrent
+            // requests so the per-user overlap and upcoming-bookings checks can't be raced.
+            User::query()->lockForUpdate()->findOrFail($user->id);
+
             /** @var Charger $locked */
             $locked = Charger::query()->with('station')->lockForUpdate()->findOrFail($charger->id);
 
@@ -70,7 +80,7 @@ class BookingService
 
             $quote = $this->pricing->quote($locked, $start->diffInMinutes($end));
 
-            return Booking::create([
+            $booking = Booking::create([
                 'user_id' => $user->id,
                 'charger_id' => $locked->id,
                 'starts_at' => $start,
@@ -80,25 +90,42 @@ class BookingService
                 'estimated_kwh' => $quote['kwh'],
                 'estimated_cost' => $quote['cost'],
             ]);
+
+            $user->notify(new BookingConfirmed($booking));
+
+            return $booking;
         });
     }
 
     public function cancel(Booking $booking): Booking
     {
-        if ($booking->status !== BookingStatus::Confirmed) {
-            throw new DomainRuleException('Only upcoming bookings can be cancelled.', 'not_cancellable');
-        }
+        return DB::transaction(function () use ($booking) {
+            // Re-read under lock so a concurrent check-in can't be overwritten.
+            $booking = Booking::query()->lockForUpdate()->findOrFail($booking->id);
 
-        if ($booking->starts_at->isPast()) {
-            throw new DomainRuleException('This booking has already started. Check in or let it lapse.', 'already_started');
-        }
+            if ($booking->status !== BookingStatus::Confirmed) {
+                throw new DomainRuleException('Only upcoming bookings can be cancelled.', 'not_cancellable');
+            }
 
-        $booking->update([
-            'status' => BookingStatus::Cancelled,
-            'cancelled_at' => now(),
-        ]);
+            if ($booking->starts_at->isPast()) {
+                throw new DomainRuleException('This booking has already started. Check in or let it lapse.', 'already_started');
+            }
 
-        return $booking;
+            // Late cancellations keep a fee; earlier ones are free.
+            $late = now()->gt($booking->starts_at->copy()->subMinutes(config('ev.cancellation_free_minutes')));
+            $fee = $late ? round($booking->estimated_cost * config('ev.cancellation_fee_percent') / 100, 2) : 0;
+
+            $booking->update([
+                'status' => BookingStatus::Cancelled,
+                'cancelled_at' => now(),
+                'cancellation_fee' => $fee,
+            ]);
+
+            $this->payments->refundFor($booking);
+            $booking->user->notify(new BookingCancelled($booking));
+
+            return $booking;
+        });
     }
 
     /** Driver checks in at the charger and charging begins. */
@@ -169,9 +196,12 @@ class BookingService
         $start = now()->startOfMinute();
         $end = $start->copy()->addMinutes($minutes);
 
-        $booking = $this->create($user, $charger, $start, $end, $vehicle);
+        // One transaction: if check-in fails the booking is rolled back, not left holding the slot.
+        return DB::transaction(function () use ($user, $charger, $start, $end, $vehicle) {
+            $booking = $this->create($user, $charger, $start, $end, $vehicle);
 
-        return $this->checkIn($booking);
+            return $this->checkIn($booking);
+        });
     }
 
     /** Stop a session, meter it, and release the rest of the booking window. */
@@ -223,21 +253,69 @@ class BookingService
      */
     public function sweep(): array
     {
-        $noShows = Booking::query()
+        $noShows = 0;
+        Booking::query()
             ->where('status', BookingStatus::Confirmed->value)
             ->where('starts_at', '<', now()->subMinutes(config('ev.no_show_grace_minutes')))
-            ->update(['status' => BookingStatus::NoShow->value, 'updated_at' => now()]);
+            ->chunkById(200, function ($batch) use (&$noShows) {
+                // Re-check status in the UPDATE so a booking checked in meanwhile is not clobbered.
+                Booking::query()
+                    ->whereIn('id', $batch->modelKeys())
+                    ->where('status', BookingStatus::Confirmed->value)
+                    ->update(['status' => BookingStatus::NoShow->value, 'updated_at' => now()]);
+
+                // Only bookings that really became no-shows get the email and the payment flag.
+                Booking::query()->with('user')->whereIn('id', $batch->modelKeys())
+                    ->where('status', BookingStatus::NoShow->value)
+                    ->get()
+                    ->each(function (Booking $b) use (&$noShows) {
+                        $noShows++;
+                        try {
+                            $this->payments->flagNoShow($b);
+                            $b->user->notify(new BookingNoShow($b));
+                        } catch (\Throwable $e) {
+                            report($e); // one bad mailbox must not stop the sweep
+                        }
+                    });
+            });
 
         $stopped = 0;
         ChargingSession::query()
             ->where('status', SessionStatus::Active->value)
             ->whereHas('booking', fn ($q) => $q->where('ends_at', '<=', now()))
             ->each(function (ChargingSession $session) use (&$stopped) {
-                $this->stop($session);
-                $stopped++;
+                try {
+                    $this->stop($session);
+                    $stopped++;
+                } catch (DomainRuleException) {
+                    // Stopped by the driver between the query and the lock; nothing to do.
+                }
             });
 
         return ['no_shows' => $noShows, 'auto_stopped' => $stopped];
+    }
+
+    /** Email a reminder for confirmed bookings starting soon. Safe to run every minute. */
+    public function sendReminders(): int
+    {
+        $sent = 0;
+
+        Booking::query()
+            ->with('user')
+            ->where('status', BookingStatus::Confirmed->value)
+            ->whereNull('reminder_sent_at')
+            ->where('starts_at', '>', now())
+            ->where('starts_at', '<=', now()->addMinutes(config('ev.reminder_minutes_before')))
+            ->each(function (Booking $booking) use (&$sent) {
+                // Claim the booking first so overlapping runs can not send it twice.
+                $claimed = Booking::query()->whereKey($booking->id)->whereNull('reminder_sent_at')->update(['reminder_sent_at' => now()]);
+                if ($claimed) {
+                    $booking->user->notify(new BookingReminder($booking));
+                    $sent++;
+                }
+            });
+
+        return $sent;
     }
 
     private function sweepCharger(Charger $charger): void
@@ -246,7 +324,13 @@ class BookingService
             ->where('status', SessionStatus::Active->value)
             ->whereHas('booking', fn ($q) => $q->where('ends_at', '<=', now()))
             ->get()
-            ->each(fn (ChargingSession $s) => $this->stop($s));
+            ->each(function (ChargingSession $s) {
+                try {
+                    $this->stop($s);
+                } catch (DomainRuleException) {
+                    // Already stopped concurrently.
+                }
+            });
     }
 
     private function assertValidWindow(Carbon $start, Carbon $end): void
