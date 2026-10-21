@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\API\Operator;
 
-use App\Enums\BookingStatus;
 use App\Http\Controllers\API\BaseController;
 use App\Http\Requests\ChargerRequest;
 use App\Http\Resources\ChargerResource;
@@ -34,13 +33,9 @@ class ChargerController extends BaseController
     {
         $this->authorize('manage', $charger->station);
 
-        $busy = $charger->bookings()
-            ->whereIn('status', BookingStatus::blocking())
-            ->where('ends_at', '>', now())
-            ->exists();
-
-        if ($busy) {
-            return $this->sendError('This charger has upcoming or active bookings. Take it offline instead.', 409);
+        // Deleting cascades to bookings and sessions (billing history), so only unused chargers can go.
+        if ($charger->bookings()->exists() || $charger->chargingSessions()->exists()) {
+            return $this->sendError('This charger has booking history. Take it offline instead.', 409);
         }
 
         $charger->delete();

@@ -60,6 +60,10 @@ class StationController extends BaseController
             $data['opens_at'] = null;
             $data['closes_at'] = null;
         }
+        // A status an admin imposed stays until an admin lifts it.
+        if ($station->status_locked && ! $request->user()->isAdmin()) {
+            unset($data['status']);
+        }
         $station->update($data);
 
         return $this->sendResponse(
@@ -72,13 +76,9 @@ class StationController extends BaseController
     {
         $this->authorize('manage', $station);
 
-        $hasUpcoming = $station->bookings()
-            ->where('bookings.status', 'confirmed')
-            ->where('bookings.ends_at', '>', now())
-            ->exists();
-
-        if ($hasUpcoming) {
-            return $this->sendError('This station has upcoming bookings. Set it to maintenance instead, or wait until they finish.', 409);
+        // Deleting cascades to bookings and sessions (billing history), so only empty stations can go.
+        if ($station->bookings()->exists() || $station->chargingSessions()->exists()) {
+            return $this->sendError('This station has booking history. Set it to maintenance instead.', 409);
         }
 
         $station->delete();

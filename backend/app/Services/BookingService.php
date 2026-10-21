@@ -35,6 +35,10 @@ class BookingService
         $this->assertValidWindow($start, $end);
 
         return DB::transaction(function () use ($user, $charger, $start, $end, $vehicle) {
+            // Lock order is always user, then charger. Serialises one driver's concurrent
+            // requests so the per-user overlap and upcoming-bookings checks can't be raced.
+            User::query()->lockForUpdate()->findOrFail($user->id);
+
             /** @var Charger $locked */
             $locked = Charger::query()->with('station')->lockForUpdate()->findOrFail($charger->id);
 
@@ -85,20 +89,25 @@ class BookingService
 
     public function cancel(Booking $booking): Booking
     {
-        if ($booking->status !== BookingStatus::Confirmed) {
-            throw new DomainRuleException('Only upcoming bookings can be cancelled.', 'not_cancellable');
-        }
+        return DB::transaction(function () use ($booking) {
+            // Re-read under lock so a concurrent check-in can't be overwritten.
+            $booking = Booking::query()->lockForUpdate()->findOrFail($booking->id);
 
-        if ($booking->starts_at->isPast()) {
-            throw new DomainRuleException('This booking has already started. Check in or let it lapse.', 'already_started');
-        }
+            if ($booking->status !== BookingStatus::Confirmed) {
+                throw new DomainRuleException('Only upcoming bookings can be cancelled.', 'not_cancellable');
+            }
 
-        $booking->update([
-            'status' => BookingStatus::Cancelled,
-            'cancelled_at' => now(),
-        ]);
+            if ($booking->starts_at->isPast()) {
+                throw new DomainRuleException('This booking has already started. Check in or let it lapse.', 'already_started');
+            }
 
-        return $booking;
+            $booking->update([
+                'status' => BookingStatus::Cancelled,
+                'cancelled_at' => now(),
+            ]);
+
+            return $booking;
+        });
     }
 
     /** Driver checks in at the charger and charging begins. */
@@ -169,9 +178,12 @@ class BookingService
         $start = now()->startOfMinute();
         $end = $start->copy()->addMinutes($minutes);
 
-        $booking = $this->create($user, $charger, $start, $end, $vehicle);
+        // One transaction: if check-in fails the booking is rolled back, not left holding the slot.
+        return DB::transaction(function () use ($user, $charger, $start, $end, $vehicle) {
+            $booking = $this->create($user, $charger, $start, $end, $vehicle);
 
-        return $this->checkIn($booking);
+            return $this->checkIn($booking);
+        });
     }
 
     /** Stop a session, meter it, and release the rest of the booking window. */
@@ -233,8 +245,12 @@ class BookingService
             ->where('status', SessionStatus::Active->value)
             ->whereHas('booking', fn ($q) => $q->where('ends_at', '<=', now()))
             ->each(function (ChargingSession $session) use (&$stopped) {
-                $this->stop($session);
-                $stopped++;
+                try {
+                    $this->stop($session);
+                    $stopped++;
+                } catch (DomainRuleException) {
+                    // Stopped by the driver between the query and the lock; nothing to do.
+                }
             });
 
         return ['no_shows' => $noShows, 'auto_stopped' => $stopped];
@@ -246,7 +262,13 @@ class BookingService
             ->where('status', SessionStatus::Active->value)
             ->whereHas('booking', fn ($q) => $q->where('ends_at', '<=', now()))
             ->get()
-            ->each(fn (ChargingSession $s) => $this->stop($s));
+            ->each(function (ChargingSession $s) {
+                try {
+                    $this->stop($s);
+                } catch (DomainRuleException) {
+                    // Already stopped concurrently.
+                }
+            });
     }
 
     private function assertValidWindow(Carbon $start, Carbon $end): void

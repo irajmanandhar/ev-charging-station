@@ -21,3 +21,4 @@ Each phase ends with: backend tests, frontend lint/typecheck/build, E2E (once it
 | Phase | Done | Skipped | Why |
 |---|---|---|---|
 | 0 | Full repo read, AUDIT.md, PLAN.md, baseline run | n/a | n/a |
+| 1 | Booking races (user lock, cancel re-read under lock, atomic walk-up start, sweep resilience); operator cannot lift admin-imposed status (`status_locked`); no delete of stations/chargers with history; OTP hashing plus 5-attempt limit; per-email auth throttle, per-user booking throttle, public read throttle; token expiry (7 days default) plus prune; constant-time login; uniform resend-otp reply; safe social linking and fragment token; security headers; top-level error `code`; CORS tightened; indexes; unit and feature tests (56 passing) | Register still reveals an existing email; token stays in `localStorage`; Pint style fixes in untouched files | Register needs a UX change (email-first flow) and Pint would rewrite untouched code against the minimal-diff rule |

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
+use App\Support\ErrorCode;
 use Illuminate\Http\JsonResponse;
 
 class BaseController extends Controller
@@ -23,6 +24,7 @@ class BaseController extends Controller
         return response()->json([
             'success' => false,
             'message' => $message,
+            'code' => ErrorCode::forStatus($code),
             'errors' => (object) $errors,
         ], $code);
     }

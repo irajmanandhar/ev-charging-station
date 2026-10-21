@@ -62,6 +62,13 @@ class SocialAuthController extends BaseController
             $user = User::where('email', $email)->first();
 
             if ($user) {
+                // Only link by email when the provider vouches for it; otherwise anyone could
+                // claim an existing account by registering its address at the provider.
+                $raw = (array) ($socialUser->user ?? []);
+                if ($provider !== 'google' || ! filter_var($raw['email_verified'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                    return $this->sendError('An account with this email already exists. Sign in with your password instead.', 409);
+                }
+
                 // Link new provider to existing user
                 $authProvider = AuthProvider::create([
                     'user_id' => $user->id,
@@ -114,7 +121,7 @@ class SocialAuthController extends BaseController
                 $message
             );
         } else {
-            $frontendUrl = rtrim(config('ev.frontend_url'), '/').'/auth/social?token='.urlencode($token);
+            $frontendUrl = rtrim(config('ev.frontend_url'), '/').'/auth/social#token='.urlencode($token); // fragment: never sent to servers or logged
             return redirect()->to($frontendUrl);
         }
     }

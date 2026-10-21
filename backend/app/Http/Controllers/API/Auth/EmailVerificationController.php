@@ -35,7 +35,11 @@ class EmailVerificationController extends BaseController
             return $this->sendError('That code is invalid or has expired.', 422, ['otp' => ['That code is invalid or has expired.']]);
         }
 
-        $user = DB::transaction(function () use ($pending) {
+        $user = DB::transaction(function () use ($pending, $email) {
+            if (User::where('email', $email)->lockForUpdate()->exists()) {
+                return null;
+            }
+
             // pending_users.password is already a hash; the 'hashed' cast keeps it as-is.
             $user = User::create([
                 'name' => $pending->name,
@@ -49,6 +53,10 @@ class EmailVerificationController extends BaseController
             return $user;
         });
 
+        if (! $user) {
+            return $this->sendError('This email is already verified. Please sign in.', 409);
+        }
+
         return $this->sendResponse([
             'user' => new UserResource($user->refresh()),
             'token' => $user->createToken('web')->plainTextToken,
@@ -60,12 +68,12 @@ class EmailVerificationController extends BaseController
         $data = $request->validate(['email' => ['required', 'email']]);
         $email = strtolower($data['email']);
 
-        if (! PendingUser::where('email', $email)->exists()) {
-            return $this->sendError('We could not find a pending sign-up for this email.', 404);
+        // Same answer whether or not a sign-up is pending, so this can't be used to probe emails.
+        $payload = null;
+        if (PendingUser::where('email', $email)->exists()) {
+            $payload = UserOtp::devPayload(UserOtp::generateOtp($email, 'email_verification'));
         }
 
-        $otp = UserOtp::generateOtp($email, 'email_verification');
-
-        return $this->sendResponse(UserOtp::devPayload($otp), 'A new code is on its way.');
+        return $this->sendResponse($payload, 'If a sign-up is pending for that email, a new code is on its way.');
     }
 }

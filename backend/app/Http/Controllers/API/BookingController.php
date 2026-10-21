@@ -66,7 +66,7 @@ class BookingController extends BaseController
     {
         $this->authorize('act', $booking);
 
-        $this->bookings->cancel($booking);
+        $booking = $this->bookings->cancel($booking);
 
         return $this->sendResponse(new BookingResource($booking->load('charger.station')), 'Booking cancelled.');
     }

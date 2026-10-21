@@ -36,7 +36,10 @@ class StationController extends BaseController
         $data = $request->validate(['status' => ['required', Rule::enum(StationStatus::class)]]);
 
         $from = $station->status->value;
-        $station->update(['status' => $data['status']]);
+        $station->update([
+            'status' => $data['status'],
+            'status_locked' => $data['status'] !== StationStatus::Active->value,
+        ]);
 
         AdminLog::record($request->user(), 'station.status_changed', $station, ['from' => $from, 'to' => $data['status']]);
 

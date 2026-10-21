@@ -36,6 +36,7 @@ class Station extends Model
         'closes_at',
         'amenities',
         'status',
+        'status_locked',
     ];
 
     protected function casts(): array
@@ -44,6 +45,7 @@ class Station extends Model
             'latitude' => 'float',
             'longitude' => 'float',
             'is_24_hours' => 'boolean',
+            'status_locked' => 'boolean',
             'amenities' => 'array',
             'status' => StationStatus::class,
         ];
