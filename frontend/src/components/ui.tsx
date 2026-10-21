@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import type { ComponentProps, ReactNode } from "react";
+import { cloneElement, isValidElement, useId } from "react";
+import type { ComponentProps, ReactElement, ReactNode } from "react";
 import type { LiveStatus } from "@/lib/types";
 
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
@@ -66,16 +67,35 @@ export function Field({
   hint?: string;
   children: ReactNode;
 }) {
+  const noteId = useId();
+  const note = error ?? hint;
+  // Link a single form control to its error/hint; wrappers (e.g. a row of inputs) are left alone.
+  const isControl = isValidElement<{ "aria-describedby"?: string; "aria-invalid"?: boolean }>(children) &&
+    (children.type === Input || children.type === Select || ["input", "select", "textarea"].includes(children.type as string));
+  const control = isControl && note
+    ? cloneElement(children as ReactElement<{ "aria-describedby"?: string; "aria-invalid"?: boolean }>, {
+        "aria-describedby": noteId,
+        ...(error ? { "aria-invalid": true } : {}),
+      })
+    : children;
+
   return (
-    <label className="block">
-      <span className="mb-1.5 block text-sm font-medium text-ink">{label}</span>
-      {children}
+    <div>
+      {/* The note sits outside the <label> so it isn't read as part of the field's name. */}
+      <label className="block">
+        <span className="mb-1.5 block text-sm font-medium text-ink">{label}</span>
+        {control}
+      </label>
       {error ? (
-        <span className="mt-1 block text-sm text-danger">{error}</span>
+        <span id={noteId} role="alert" className="mt-1 block text-sm text-danger">
+          {error}
+        </span>
       ) : hint ? (
-        <span className="mt-1 block text-sm text-muted">{hint}</span>
+        <span id={noteId} className="mt-1 block text-sm text-muted">
+          {hint}
+        </span>
       ) : null}
-    </label>
+    </div>
   );
 }
 

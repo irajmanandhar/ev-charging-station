@@ -73,6 +73,7 @@ export function LoginForm() {
         </p>
       </form>
 
+      {process.env.NEXT_PUBLIC_DEMO_LOGIN === "true" && (
       <div className="mt-6 rounded-lg border border-dashed border-line-strong p-3">
         <p className="text-xs font-medium text-ink-2">Demo accounts (password: <code>password</code>)</p>
         <div className="mt-2 grid grid-cols-3 gap-2">
@@ -94,6 +95,7 @@ export function LoginForm() {
           ))}
         </div>
       </div>
+      )}
     </AuthCard>
   );
 }
